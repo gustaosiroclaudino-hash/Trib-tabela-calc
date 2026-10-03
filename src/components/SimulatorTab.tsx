@@ -77,8 +77,8 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
       let sumCreditos = 0;
 
       saidasDocs.forEach(d => {
-        d.itens.forEach(item => {
-          const sim = item.simulacoesPorAno[ano];
+        (d.itens || []).forEach(item => {
+          const sim = item.simulacoesPorAno?.[ano];
           if (sim) {
             sumCBS += sim.valorCBS;
             sumIBSEstadual += sim.valorIBSEstadual;
@@ -93,8 +93,8 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
       });
 
       entradasDocs.forEach(d => {
-        d.itens.forEach(item => {
-          const sim = item.simulacoesPorAno[ano];
+        (d.itens || []).forEach(item => {
+          const sim = item.simulacoesPorAno?.[ano];
           if (sim && sim.creditoElegivel) {
             sumCreditos += sim.creditoEstimadoValor;
           }

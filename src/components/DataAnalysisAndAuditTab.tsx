@@ -105,8 +105,8 @@ export const DataAnalysisAndAuditTab: React.FC<DataAnalysisAndAuditTabProps> = (
       const cur = map.get(key) || { label, count: 0, totalValor: 0, totalIcms: 0, totalReforma2033: 0 };
       cur.count += 1;
       cur.totalValor += item.vProd;
-      cur.totalIcms += item.tributosLegados.vICMS;
-      const sim33 = item.simulacoesPorAno[2033];
+      cur.totalIcms += item.tributosLegados?.vICMS || 0;
+      const sim33 = item.simulacoesPorAno?.[2033];
       if (sim33) cur.totalReforma2033 += (sim33.valorCBS + sim33.valorIBSTotal + sim33.valorIS);
       map.set(key, cur);
     });
@@ -138,7 +138,7 @@ export const DataAnalysisAndAuditTab: React.FC<DataAnalysisAndAuditTabProps> = (
     ];
 
     const rows = filteredItens.map(({ doc, item }) => {
-      const sim = item.simulacoesPorAno[2033];
+      const sim = item.simulacoesPorAno?.[2033];
       const parceiro = doc.tipoOperacao === 'SAIDA' ? doc.destinatario.razaoSocial : doc.emitente.razaoSocial;
       return [
         `NF ${doc.numero}`,
@@ -361,7 +361,7 @@ export const DataAnalysisAndAuditTab: React.FC<DataAnalysisAndAuditTabProps> = (
                 </tr>
               ) : (
                 filteredItens.map(({ doc, item }) => {
-                  const sim = item.simulacoesPorAno[2033];
+                  const sim = item.simulacoesPorAno?.[2033];
                   return (
                     <tr key={item.id} onClick={() => onSelectDoc(doc)} style={{ cursor: 'pointer' }}>
                       <td>

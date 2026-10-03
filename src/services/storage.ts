@@ -50,7 +50,20 @@ export class LocalStorageManager {
   static getDocuments(): FiscalDocument[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.DOCUMENTS);
-      if (data) return JSON.parse(data);
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) {
+          return parsed.map(d => ({
+            ...d,
+            totais: d.totais || { vProd: 0, vFrete: 0, vSeg: 0, vDesc: 0, vII: 0, vIPI: 0, vPIS: 0, vCOFINS: 0, vICMS: 0, vST: 0, vNF: 0, totalTributosLegados: 0 },
+            itens: (d.itens || []).map((it: any) => ({
+              ...it,
+              tributosLegados: it.tributosLegados || { vICMS: 0, vPIS: 0, vCOFINS: 0, vIPI: 0, vST: 0, vII: 0 },
+              simulacoesPorAno: it.simulacoesPorAno || {}
+            }))
+          }));
+        }
+      }
     } catch (e) {
       console.error('Erro ao ler documentos do storage', e);
     }

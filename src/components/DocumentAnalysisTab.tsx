@@ -73,7 +73,7 @@ export const DocumentAnalysisTab: React.FC<DocumentAnalysisTabProps> = ({
     return Array.from(map.values());
   }, [filteredItens, groupByNcm]);
 
-  const activeItemSim = selectedItem?.simulacoesPorAno[activeSimulationYear];
+  const activeItemSim = selectedItem?.simulacoesPorAno?.[activeSimulationYear];
 
   return (
     <div>
@@ -266,7 +266,7 @@ export const DocumentAnalysisTab: React.FC<DocumentAnalysisTabProps> = ({
               ))
             ) : (
               filteredItens.map((item) => {
-                const sim = item.simulacoesPorAno[activeSimulationYear];
+                const sim = item.simulacoesPorAno?.[activeSimulationYear];
                 const isSelected = selectedItem?.id === item.id;
                 return (
                   <tr 

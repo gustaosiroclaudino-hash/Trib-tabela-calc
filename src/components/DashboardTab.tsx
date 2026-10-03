@@ -73,11 +73,11 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   let totalCreditosPotenciais2027 = 0;
   let totalCreditosPotenciais2033 = 0;
   entradasDocs.forEach(d => {
-    d.itens.forEach(item => {
-      const sim27 = item.simulacoesPorAno[2027];
+    (d.itens || []).forEach(item => {
+      const sim27 = item.simulacoesPorAno?.[2027];
       if (sim27 && sim27.creditoElegivel) totalCreditosPotenciais2027 += sim27.creditoEstimadoValor;
 
-      const sim33 = item.simulacoesPorAno[2033];
+      const sim33 = item.simulacoesPorAno?.[2033];
       if (sim33 && sim33.creditoElegivel) totalCreditosPotenciais2033 += sim33.creditoEstimadoValor;
     });
   });
@@ -90,11 +90,11 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   let totalIS2033 = 0;
 
   saidasDocs.forEach(d => {
-    d.itens.forEach(item => {
-      const sim26 = item.simulacoesPorAno[2026];
+    (d.itens || []).forEach(item => {
+      const sim26 = item.simulacoesPorAno?.[2026];
       if (sim26) totalReforma2026 += (sim26.valorCBS + sim26.valorIBSTotal);
 
-      const sim33 = item.simulacoesPorAno[2033];
+      const sim33 = item.simulacoesPorAno?.[2033];
       if (sim33) {
         totalReforma2033 += sim33.totalCargaEstimada;
         totalCBS2033 += sim33.valorCBS;
@@ -106,8 +106,8 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
   // Alertas de qualidade e classificação
   const docsComPendencia = documents.filter(d => 
-    d.itens.some(item => !item.ncm || item.alertasQualidade.length > 0 || item.classificacaoStatus === 'NAO_DETERMINADA') ||
-    (d.metadadosImportacao.divergenciasTotais && d.metadadosImportacao.divergenciasTotais.length > 0)
+    (d.itens || []).some(item => !item.ncm || (item.alertasQualidade && item.alertasQualidade.length > 0) || item.classificacaoStatus === 'NAO_DETERMINADA') ||
+    (d.metadadosImportacao?.divergenciasTotais && d.metadadosImportacao.divergenciasTotais.length > 0)
   );
 
   // Top Produtos por Valor
@@ -415,8 +415,8 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
               const dadosTransicao = anosTransicao.map(ano => {
                 let cargaAno = 0;
                 saidasDocs.forEach(d => {
-                  d.itens.forEach(item => {
-                    const sim = item.simulacoesPorAno[ano];
+                  (d.itens || []).forEach(item => {
+                    const sim = item.simulacoesPorAno?.[ano];
                     if (sim) cargaAno += sim.totalCargaEstimada;
                   });
                 });
