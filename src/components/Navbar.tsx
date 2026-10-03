@@ -4,7 +4,6 @@ import {
   Moon, 
   Sun, 
   ShieldCheck, 
-  Sparkles, 
   HelpCircle,
   FileCheck2,
   Sliders
@@ -19,7 +18,6 @@ interface NavbarProps {
   onSelectScenario: (id: string) => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
-  onLoadDemoFixtures: () => void;
   totalDocsCount: number;
 }
 
@@ -31,7 +29,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectScenario,
   theme,
   onToggleTheme,
-  onLoadDemoFixtures,
   totalDocsCount
 }) => {
   return (
@@ -94,17 +91,6 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       <div className="header-actions">
-        {totalDocsCount === 0 && (
-          <button 
-            className="btn btn-primary btn-sm"
-            onClick={onLoadDemoFixtures}
-            title="Carrega o caso de teste oficial de 14 itens (R$ 22.349,73) e notas sintéticas"
-          >
-            <Sparkles size={14} />
-            <span>Carregar XMLs de Exemplo</span>
-          </button>
-        )}
-
         <button 
           className="btn btn-secondary btn-sm"
           onClick={onToggleTheme}

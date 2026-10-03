@@ -5,8 +5,20 @@ import {
   ScenarioPremises 
 } from '../types';
 import { OFFICIAL_TAX_RULESET_DEFAULT, DEFAULT_SCENARIOS } from './defaultRules';
-import { DEFAULT_DEMO_COMPANY, ALL_INITIAL_FIXTURES } from './fixtures';
 import { parseNfeXml } from './nfeParser';
+
+export const DEFAULT_COMPANY: CompanyProfile = {
+  id: 'empresa-principal',
+  cnpj: '',
+  razaoSocial: 'Minha Empresa',
+  nomeFantasia: 'Empresa Principal',
+  uf: 'SP',
+  municipio: 'São Paulo',
+  codigoMunicipioIBGE: '3550308',
+  regimeTributario: 'LUCRO_REAL',
+  dataCadastro: new Date().toISOString(),
+  permiteCreditoAmplo: true
+};
 
 const STORAGE_KEYS = {
   COMPANY: 'tribcalc_active_company',
@@ -26,7 +38,7 @@ export class LocalStorageManager {
     } catch (e) {
       console.error('Erro ao ler empresa do storage', e);
     }
-    return DEFAULT_DEMO_COMPANY;
+    return DEFAULT_COMPANY;
   }
 
   static saveCompany(company: CompanyProfile): void {
@@ -117,32 +129,6 @@ export class LocalStorageManager {
 
   static saveTheme(theme: 'dark' | 'light'): void {
     localStorage.setItem(STORAGE_KEYS.THEME, theme);
-  }
-
-  // --- Carga Inicial de Fixtures / Demonstração ---
-  static async loadOfficialFixtures(onProgress?: (msg: string) => void): Promise<FiscalDocument[]> {
-    const company = this.getCompany();
-    const ruleset = this.getRuleSet();
-    const scenarios = this.getScenarios();
-    const activeScenario = scenarios.find(s => s.id === this.getSelectedScenarioId()) || scenarios[0];
-
-    const currentDocs = this.getDocuments();
-    const existingKeys = new Set(currentDocs.map(d => d.chaveAcesso));
-    const newDocs: FiscalDocument[] = [...currentDocs];
-
-    for (const fixture of ALL_INITIAL_FIXTURES) {
-      if (onProgress) onProgress(`Processando ${fixture.name}...`);
-      const res = await parseNfeXml(fixture.content, fixture.name, company, ruleset, activeScenario);
-      if (res.success && res.doc) {
-        if (!existingKeys.has(res.doc.chaveAcesso)) {
-          existingKeys.add(res.doc.chaveAcesso);
-          newDocs.push(res.doc);
-        }
-      }
-    }
-
-    this.saveDocuments(newDocs);
-    return newDocs;
   }
 
   // --- Recálculo de Todos os Documentos (Audit Trail) ---

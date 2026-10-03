@@ -72,15 +72,6 @@ export const App: React.FC = () => {
     return scenarios.find(s => s.id === selectedScenarioId) || scenarios[0];
   }, [scenarios, selectedScenarioId]);
 
-  // Se não houver nenhum documento cadastrado, sugere carregar as fixtures na primeira vez
-  const handleLoadDemoFixtures = async () => {
-    const loadedDocs = await LocalStorageManager.loadOfficialFixtures();
-    setDocuments(loadedDocs);
-    if (loadedDocs.length > 0) {
-      setSelectedDocId(loadedDocs[0].id);
-    }
-  };
-
   // Salvar Empresa
   const handleSaveCompany = async (newCompany: CompanyProfile) => {
     LocalStorageManager.saveCompany(newCompany);
@@ -277,7 +268,6 @@ export const App: React.FC = () => {
         onSelectScenario={handleSelectScenario}
         theme={theme}
         onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        onLoadDemoFixtures={handleLoadDemoFixtures}
         totalDocsCount={documents.length}
       />
 
@@ -380,7 +370,6 @@ export const App: React.FC = () => {
               setSelectedDocId(doc.id);
               setActiveTab('analise');
             }}
-            onLoadOfficialFixture={handleLoadDemoFixtures}
           />
         )}
 

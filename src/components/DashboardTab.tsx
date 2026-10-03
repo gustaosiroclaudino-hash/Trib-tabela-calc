@@ -26,7 +26,6 @@ interface DashboardTabProps {
   ruleset: TaxRuleSet;
   onNavigateToTab: (tabId: string) => void;
   onSelectDoc: (doc: FiscalDocument) => void;
-  onLoadOfficialFixture: () => void;
 }
 
 export const DashboardTab: React.FC<DashboardTabProps> = ({
@@ -35,8 +34,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   activeScenario,
   ruleset,
   onNavigateToTab,
-  onSelectDoc,
-  onLoadOfficialFixture
+  onSelectDoc
 }) => {
   // Estado para Drill-down Modal
   const [drillDownInfo, setDrillDownInfo] = useState<{
@@ -167,16 +165,12 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           Nenhum Documento Fiscal Importado
         </h2>
         <p style={{ color: 'var(--text-secondary)', maxWidth: '550px', margin: '0 auto 1.75rem', fontSize: '0.9rem' }}>
-          Para começar a análise da reforma tributária, importe seus arquivos XML de NF-e (modelo 55) ou carregue o <strong>Caso Inicial de Teste Oficial (14 itens, R$ 22.349,73)</strong> descrito no Guia.
+          Para começar a análise da reforma tributária (CBS, IBS e IS), importe seus arquivos XML de NF-e (modelo 55) ou NFC-e (modelo 65). O processamento é realizado 100% no seu navegador.
         </p>
         <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-          <button className="btn btn-primary" onClick={onLoadOfficialFixture}>
-            <Scale size={16} />
-            <span>Carregar Caso Oficial (14 Itens • R$ 22k)</span>
-          </button>
-          <button className="btn btn-secondary" onClick={() => onNavigateToTab('importar')}>
+          <button className="btn btn-primary" onClick={() => onNavigateToTab('importar')}>
             <ArrowUpRight size={16} />
-            <span>Ir para Tela de Importação</span>
+            <span>Importar Arquivos XML</span>
           </button>
         </div>
       </div>

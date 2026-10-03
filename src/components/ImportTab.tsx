@@ -6,16 +6,12 @@ import {
   AlertCircle, 
   Copy, 
   FileWarning, 
-  Sparkles, 
   ArrowRight, 
   Trash2,
-  RefreshCw,
-  FolderOpen
+  RefreshCw
 } from 'lucide-react';
 import { FiscalDocument, CompanyProfile, TaxRuleSet, ScenarioPremises, ImportSummary } from '../types';
 import { processBatchXmlFiles } from '../services/nfeParser';
-import { ALL_INITIAL_FIXTURES } from '../services/fixtures';
-import { OFFICIAL_FIXTURE_XML } from '../services/fixtureOfficialXml';
 
 interface ImportTabProps {
   documents: FiscalDocument[];
@@ -78,35 +74,6 @@ export const ImportTab: React.FC<ImportTabProps> = ({
     setIsProcessing(false);
   };
 
-  // Carrega apenas a Fixture Oficial descrita no item 6 do Guia (14 itens, R$ 22.349,73)
-  const handleLoadOfficialOnly = async () => {
-    setIsProcessing(true);
-    const filesToRead = [{ name: '35260507790200000134550050001361011607304194-nfe.xml', content: OFFICIAL_FIXTURE_XML }];
-    const { summary, newDocs } = await processBatchXmlFiles(
-      filesToRead,
-      documents,
-      activeCompany,
-      ruleset,
-      activeScenario
-    );
-    setPendingBatch({ summary, newDocs });
-    setIsProcessing(false);
-  };
-
-  // Carrega todas as Fixtures de Demonstração (Oficial + Entradas + Devolução + Cancelamento + Benefícios)
-  const handleLoadAllDemoFixtures = async () => {
-    setIsProcessing(true);
-    const { summary, newDocs } = await processBatchXmlFiles(
-      ALL_INITIAL_FIXTURES,
-      documents,
-      activeCompany,
-      ruleset,
-      activeScenario
-    );
-    setPendingBatch({ summary, newDocs });
-    setIsProcessing(false);
-  };
-
   // Confirmação da importação da prévia
   const handleConfirmBatch = () => {
     if (!pendingBatch) return;
@@ -128,16 +95,6 @@ export const ImportTab: React.FC<ImportTabProps> = ({
         </div>
 
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <button className="btn btn-secondary btn-sm" onClick={handleLoadOfficialOnly} title="Carrega a NF-e exata de R$ 22.349,73 descrita no Guia">
-            <Sparkles size={14} color="var(--accent-blue)" />
-            <span>Carregar Caso Oficial (14 itens • R$ 22k)</span>
-          </button>
-
-          <button className="btn btn-secondary btn-sm" onClick={handleLoadAllDemoFixtures} title="Carrega casos de Entrada, Devolução e Cancelamento para teste amplo">
-            <FolderOpen size={14} color="var(--accent-indigo)" />
-            <span>Carregar Suite Completa de Testes</span>
-          </button>
-
           {documents.length > 0 && (
             <button className="btn btn-danger btn-sm" onClick={onClearAllDocs} title="Limpa todas as notas fiscais do banco local">
               <Trash2 size={14} />
@@ -334,7 +291,7 @@ export const ImportTab: React.FC<ImportTabProps> = ({
               {documents.length === 0 ? (
                 <tr>
                   <td colSpan={9} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-                    Nenhum documento cadastrado. Arraste arquivos XML acima ou use os botões de fixtures.
+                    Nenhum documento cadastrado. Arraste e solte seus arquivos XML de NF-e/NFC-e acima para iniciar a análise.
                   </td>
                 </tr>
               ) : (
