@@ -16,12 +16,14 @@ interface EntryExitTabProps {
   documents: FiscalDocument[];
   activeScenario: ScenarioPremises;
   onSelectDoc: (doc: FiscalDocument) => void;
+  onToggleOperationDirection?: (docId: string) => void;
 }
 
 export const EntryExitTab: React.FC<EntryExitTabProps> = ({
   documents,
   activeScenario,
-  onSelectDoc
+  onSelectDoc,
+  onToggleOperationDirection
 }) => {
   const [selectedPartnerFilter, setSelectedPartnerFilter] = useState<string>('');
 
@@ -185,6 +187,93 @@ export const EntryExitTab: React.FC<EntryExitTabProps> = ({
             <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{saidas.length} notas emitidas</span>
           </div>
 
+        </div>
+      </div>
+
+      {/* Tabela de Conferência e Ajuste do Fluxo (Entradas vs Saídas) */}
+      <div className="chart-card" style={{ marginBottom: '1.5rem' }}>
+        <div className="chart-title">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <ArrowLeftRight size={18} color="var(--accent-blue)" />
+            <span>Classificação das Operações nos Livros Fiscais ({activeDocs.length} documentos)</span>
+          </div>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            Regra SPED: Compras de terceiros com &lt;tpNF&gt;1 escrituram como Entrada
+          </span>
+        </div>
+
+        <div className="table-responsive">
+          <table className="audit-table">
+            <thead>
+              <tr>
+                <th>Direção Fiscal</th>
+                <th>Nota / Modelo</th>
+                <th>Origem da Regra</th>
+                <th>Emitente (Origem)</th>
+                <th>Destinatário (Destino)</th>
+                <th style={{ textAlign: 'right' }}>Total (R$)</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activeDocs.map(doc => {
+                const isSaida = doc.tipoOperacao === 'SAIDA';
+                return (
+                  <tr key={doc.id}>
+                    <td>
+                      <span className={`badge ${isSaida ? 'badge-saida' : 'badge-entrada'}`}>
+                        {doc.tipoOperacao}
+                      </span>
+                    </td>
+                    <td>
+                      <strong>NF {doc.numero || 'S/N'}</strong>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        {doc.dataEmissao ? new Date(doc.dataEmissao).toLocaleDateString('pt-BR') : '-'}
+                      </div>
+                    </td>
+                    <td>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                        {doc.tipoOperacaoOrigem === 'AUTOMATICO_CNPJ' && 'Auto por CNPJ'}
+                        {doc.tipoOperacaoOrigem === 'AUTO_DETECCAO_LOTE' && 'Detectado no Lote'}
+                        {doc.tipoOperacaoOrigem === 'CORRECAO_MANUAL' && 'Correção Manual'}
+                        {doc.tipoOperacaoOrigem === 'TAG_TPNF' && 'Padrão SEFAZ (tpNF)'}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: '0.8rem', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={doc.emitente.razaoSocial}>
+                      {doc.emitente.razaoSocial}
+                    </td>
+                    <td style={{ fontSize: '0.8rem', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={doc.destinatario.razaoSocial}>
+                      {doc.destinatario.razaoSocial}
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                      R$ {doc.totais.vNF.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.35rem' }}>
+                        {onToggleOperationDirection && (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => onToggleOperationDirection(doc.id)}
+                            style={{ fontSize: '0.7rem', padding: '0.2rem 0.45rem' }}
+                            title="Inverter direção contábil entre Entrada e Saída (recalcula créditos de IBS/CBS)"
+                          >
+                            Inverter Direção
+                          </button>
+                        )}
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => onSelectDoc(doc)}
+                          style={{ fontSize: '0.7rem', padding: '0.2rem 0.45rem' }}
+                        >
+                          Ver Detalhes
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 

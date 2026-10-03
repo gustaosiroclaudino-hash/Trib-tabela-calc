@@ -8,7 +8,9 @@ import {
   FileWarning, 
   ArrowRight, 
   Trash2,
-  RefreshCw
+  RefreshCw,
+  Building2,
+  ArrowLeftRight
 } from 'lucide-react';
 import { FiscalDocument, CompanyProfile, TaxRuleSet, ScenarioPremises, ImportSummary } from '../types';
 import { processBatchXmlFiles } from '../services/nfeParser';
@@ -20,6 +22,8 @@ interface ImportTabProps {
   ruleset: TaxRuleSet;
   activeScenario: ScenarioPremises;
   onClearAllDocs: () => void;
+  onSetDetectedCompanyAsActive?: (detected: { cnpj: string; razaoSocial: string }) => void;
+  onToggleOperationDirection?: (docId: string) => void;
 }
 
 export const ImportTab: React.FC<ImportTabProps> = ({
@@ -296,6 +300,45 @@ export const ImportTab: React.FC<ImportTabProps> = ({
             </button>
           </div>
 
+          {/* Card de Empresa Titular Detectada Automaticamente no Lote */}
+          {batchResult.summary.detectedCompany && (
+            <div style={{
+              background: 'rgba(99, 102, 241, 0.08)',
+              border: '1px solid rgba(99, 102, 241, 0.35)',
+              borderRadius: 'var(--radius-md)',
+              padding: '0.85rem 1rem',
+              marginBottom: '1rem',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '1rem',
+              flexWrap: 'wrap'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <Building2 size={24} color="var(--accent-indigo)" style={{ flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-highlight)' }}>
+                    Empresa Titular do Lote: {batchResult.summary.detectedCompany.razaoSocial}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    CNPJ: <strong>{batchResult.summary.detectedCompany.cnpj}</strong> • Presente em {batchResult.summary.detectedCompany.totalDocs} notas ({batchResult.summary.detectedCompany.asDest} como compradora/entrada e {batchResult.summary.detectedCompany.asEmit} como faturamento/saída).
+                  </div>
+                </div>
+              </div>
+              {onSetDetectedCompanyAsActive && (!activeCompany.cnpj || activeCompany.cnpj.replace(/\D/g, '') !== batchResult.summary.detectedCompany.cnpj) && (
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => onSetDetectedCompanyAsActive(batchResult.summary.detectedCompany!)}
+                  style={{ fontSize: '0.78rem' }}
+                  title="Atualiza a empresa ativa nas configurações e recalcula débitos e créditos de todas as notas"
+                >
+                  <Building2 size={13} />
+                  <span>Definir como Empresa em Análise</span>
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Cards de Métricas do Lote */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
             <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '0.65rem', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
@@ -402,9 +445,27 @@ export const ImportTab: React.FC<ImportTabProps> = ({
                   return (
                     <tr key={doc.id}>
                       <td>
-                        <span className={`badge ${isSaida ? 'badge-saida' : 'badge-entrada'}`}>
-                          {doc.tipoOperacao}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <span className={`badge ${isSaida ? 'badge-saida' : 'badge-entrada'}`}>
+                            {doc.tipoOperacao}
+                          </span>
+                          {onToggleOperationDirection && (
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => onToggleOperationDirection(doc.id)}
+                              style={{ padding: '0.15rem 0.35rem', fontSize: '0.65rem' }}
+                              title="Inverter direção contábil (Entrada/Saída) e recalcular créditos desta nota"
+                            >
+                              <ArrowLeftRight size={10} />
+                            </button>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          {doc.tipoOperacaoOrigem === 'AUTOMATICO_CNPJ' && 'Por CNPJ'}
+                          {doc.tipoOperacaoOrigem === 'AUTO_DETECCAO_LOTE' && 'Auto-detectado'}
+                          {doc.tipoOperacaoOrigem === 'CORRECAO_MANUAL' && 'Manual'}
+                          {doc.tipoOperacaoOrigem === 'TAG_TPNF' && 'tpNF SEFAZ'}
+                        </div>
                       </td>
                       <td>
                         <strong>{doc.numero || 'S/N'}</strong> <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>Mod {doc.modelo}</span>

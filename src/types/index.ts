@@ -197,7 +197,7 @@ export interface FiscalDocument {
   dataEmissao: string;
   dataOperacao?: string;
   tipoOperacao: OperationDirection; // ENTRADA ou SAIDA
-  tipoOperacaoOrigem: 'AUTOMATICO_CNPJ' | 'CORRECAO_MANUAL' | 'TAG_TPNF';
+  tipoOperacaoOrigem: 'AUTOMATICO_CNPJ' | 'CORRECAO_MANUAL' | 'TAG_TPNF' | 'AUTO_DETECCAO_LOTE';
   naturezaOperacao: string;
   situacao: DocumentStatus;
   isDevolucao: boolean;
@@ -306,6 +306,15 @@ export interface ImportFileResult {
   avisos?: string[];
 }
 
+export interface DetectedCompanyInfo {
+  cnpj: string;
+  razaoSocial: string;
+  totalDocs: number;
+  asDest: number;
+  asEmit: number;
+  confiancaPercent: number;
+}
+
 export interface ImportSummary {
   totalArquivos: number;
   totalAceitos: number;
@@ -313,4 +322,5 @@ export interface ImportSummary {
   totalInvalidos: number;
   totalParciais: number;
   detalhesPorArquivo: ImportFileResult[];
+  detectedCompany?: DetectedCompanyInfo;
 }

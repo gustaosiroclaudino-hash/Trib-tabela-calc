@@ -105,6 +105,57 @@ export function isCfopDevolucao(cfop: string): boolean {
 }
 
 /**
+ * Determina a direção da operação (ENTRADA ou SAÍDA) sob a ótica da empresa em apuração/auditoria,
+ * de acordo com os preceitos universais do SPED Fiscal (EFD ICMS/IPI) e a disciplina da LC 214/2025.
+ * 
+ * Princípios Globais (Válidos para qualquer empresa do país):
+ * 1. PERSPECTIVA DO DESTINATÁRIO (COMPRADOR/TOMADOR):
+ *    Se o destinatário for a empresa em análise (comparando CNPJ exato ou a raiz de 8 dígitos para filiais),
+ *    o documento representa uma ENTRADA no estabelecimento adquirente, gerando direito a créditos de IBS e CBS.
+ *    O campo <tpNF>1</tpNF> do XML emitido por terceiro atesta apenas a saída do fornecedor.
+ * 2. PERSPECTIVA DO EMITENTE (VENDEDOR/PRESTADOR):
+ *    Se o emitente for a empresa em análise:
+ *    - tpNF = '1' -> SAÍDA (faturamento para clientes, gerando débitos).
+ *    - tpNF = '0' -> ENTRADA (emissão própria de entrada: devolução recebida, importação direta, produtor rural).
+ * 3. FALLBACK SEM CNPJ ATIVO:
+ *    Se o CNPJ da empresa ativa não estiver configurado ou não coincidir com as partes,
+ *    adota o tpNF SEFAZ com origem TAG_TPNF.
+ */
+export function determineOperationDirection(
+  emitCnpjCpf: string,
+  destCnpjCpf: string,
+  tpNF: string,
+  targetCompany?: CompanyProfile | { cnpj?: string }
+): { tipoOperacao: OperationDirection; tipoOrigem: FiscalDocument['tipoOperacaoOrigem'] } {
+  const cleanEmit = (emitCnpjCpf || '').replace(/\D/g, '');
+  const cleanDest = (destCnpjCpf || '').replace(/\D/g, '');
+  const cleanTarget = (targetCompany?.cnpj || '').replace(/\D/g, '');
+
+  if (cleanTarget.length >= 8) {
+    const targetRoot = cleanTarget.slice(0, 8);
+    const emitRoot = cleanEmit.length >= 8 ? cleanEmit.slice(0, 8) : cleanEmit;
+    const destRoot = cleanDest.length >= 8 ? cleanDest.slice(0, 8) : cleanDest;
+
+    // 1. Destinatário é a empresa auditada (ou filial com mesma raiz) -> ENTRADA DE COMPRA
+    if (cleanDest === cleanTarget || (cleanDest.length === 14 && destRoot === targetRoot)) {
+      return { tipoOperacao: 'ENTRADA', tipoOrigem: 'AUTOMATICO_CNPJ' };
+    }
+
+    // 2. Emitente é a empresa auditada (ou filial com mesma raiz)
+    if (cleanEmit === cleanTarget || (cleanEmit.length === 14 && emitRoot === targetRoot)) {
+      if (tpNF === '0') {
+        return { tipoOperacao: 'ENTRADA', tipoOrigem: 'AUTOMATICO_CNPJ' }; // Emissão própria de entrada
+      }
+      return { tipoOperacao: 'SAIDA', tipoOrigem: 'AUTOMATICO_CNPJ' }; // Venda / Saída
+    }
+  }
+
+  // 3. Fallback genérico quando não há identificação
+  const fallback: OperationDirection = tpNF === '0' ? 'ENTRADA' : 'SAIDA';
+  return { tipoOperacao: fallback, tipoOrigem: 'TAG_TPNF' };
+}
+
+/**
  * Parser de NF-e / NFC-e seguro e tolerante a múltiplos formatos
  */
 export async function parseNfeXml(
@@ -218,26 +269,9 @@ export async function parseNfeXml(
   const destMun = enderDest ? getTagText(enderDest, 'xMun') : '';
   const destCodMun = enderDest ? getTagText(enderDest, 'cMun') : '';
 
-  // Determinar Tipo de Operação (ENTRADA ou SAIDA)
-  // Regra explícita: Se o CNPJ da empresa ativa for igual ao emitente -> SAÍDA.
-  // Se for igual ao destinatário -> ENTRADA.
-  // Caso contrário, usa tpNF (0 = entrada, 1 = saída).
-  let tipoOperacao: OperationDirection = tpNF === '0' ? 'ENTRADA' : 'SAIDA';
-  let tipoOrigem: FiscalDocument['tipoOperacaoOrigem'] = 'TAG_TPNF';
-
-  if (activeCompany && activeCompany.cnpj) {
-    const cleanCompanyCnpj = activeCompany.cnpj.replace(/\D/g, '');
-    const cleanEmitCnpj = emitCnpj.replace(/\D/g, '');
-    const cleanDestCnpj = destCnpj.replace(/\D/g, '');
-
-    if (cleanCompanyCnpj && cleanEmitCnpj === cleanCompanyCnpj) {
-      tipoOperacao = 'SAIDA';
-      tipoOrigem = 'AUTOMATICO_CNPJ';
-    } else if (cleanCompanyCnpj && cleanDestCnpj === cleanCompanyCnpj) {
-      tipoOperacao = 'ENTRADA';
-      tipoOrigem = 'AUTOMATICO_CNPJ';
-    }
-  }
+  // Determinar Tipo de Operação (ENTRADA ou SAIDA) sob a ótica da empresa em apuração/auditoria
+  // Respeita regras universais do SPED Fiscal (EFD ICMS/IPI) e não-cumulatividade (LC 214/2025)
+  const { tipoOperacao, tipoOrigem } = determineOperationDirection(emitCnpj, destCnpj, tpNF, activeCompany);
 
   // Totais do XML (<total><ICMSTot>)
   const total = findFirstElement(infNFe, 'total');
@@ -511,6 +545,74 @@ export async function processBatchXmlFiles(
   scenario?: ScenarioPremises,
   onProgress?: (current: number, total: number, fileName: string) => void
 ): Promise<{ summary: ImportSummary; newDocs: FiscalDocument[] }> {
+  // 1. Pré-scan Estatístico Universal de Participantes no Lote (Genérico para qualquer empresa do país)
+  const cnpjStats: Record<string, { cnpj: string; razaoSocial: string; totalDocs: number; asDest: number; asEmit: number }> = {};
+
+  for (const f of files) {
+    try {
+      const emitCnpjMatch = f.content.match(/<emit>[\s\S]*?<CNPJ>(\d{14})<\/CNPJ>[\s\S]*?<xNome>([^<]+)<\/xNome>/i);
+      const destCnpjMatch = f.content.match(/<dest>[\s\S]*?<CNPJ>(\d{14})<\/CNPJ>[\s\S]*?<xNome>([^<]+)<\/xNome>/i);
+
+      if (emitCnpjMatch) {
+        const c = emitCnpjMatch[1];
+        const nome = emitCnpjMatch[2].trim();
+        if (!cnpjStats[c]) cnpjStats[c] = { cnpj: c, razaoSocial: nome, totalDocs: 0, asDest: 0, asEmit: 0 };
+        cnpjStats[c].totalDocs++;
+        cnpjStats[c].asEmit++;
+      }
+
+      if (destCnpjMatch) {
+        const c = destCnpjMatch[1];
+        const nome = destCnpjMatch[2].trim();
+        if (!cnpjStats[c]) cnpjStats[c] = { cnpj: c, razaoSocial: nome, totalDocs: 0, asDest: 0, asEmit: 0 };
+        cnpjStats[c].totalDocs++;
+        cnpjStats[c].asDest++;
+      }
+    } catch {
+      // Ignora erro no pré-scan
+    }
+  }
+
+  // Identifica a empresa com maior frequência no lote
+  let detectedCompany: ImportSummary['detectedCompany'] = undefined;
+  const sortedCnpjs = Object.values(cnpjStats).sort((a, b) => b.totalDocs - a.totalDocs);
+  
+  if (sortedCnpjs.length > 0 && files.length > 0) {
+    const topCandidate = sortedCnpjs[0];
+    const presenca = topCandidate.totalDocs / files.length;
+    if (presenca >= 0.5 || (files.length <= 3 && topCandidate.totalDocs >= 1)) {
+      detectedCompany = {
+        cnpj: topCandidate.cnpj,
+        razaoSocial: topCandidate.razaoSocial,
+        totalDocs: topCandidate.totalDocs,
+        asDest: topCandidate.asDest,
+        asEmit: topCandidate.asEmit,
+        confiancaPercent: Math.round(presenca * 100)
+      };
+    }
+  }
+
+  // Empresa de referência para classificação:
+  // Usa a cadastrada se possuir CNPJ; caso contrário, se detectou uma empresa central no lote,
+  // utiliza-a temporariamente para não classificar compras incorretamente como saída!
+  const hasConfiguredCnpj = Boolean(company && company.cnpj && company.cnpj.replace(/\D/g, '').length >= 8);
+  const effectiveCompany: CompanyProfile | undefined = hasConfiguredCnpj
+    ? company
+    : (detectedCompany ? {
+        ...(company || {
+          id: 'auto-detected',
+          nomeFantasia: detectedCompany.razaoSocial,
+          uf: 'SP',
+          municipio: '',
+          codigoMunicipioIBGE: '',
+          regimeTributario: 'LUCRO_REAL',
+          dataCadastro: new Date().toISOString(),
+          permiteCreditoAmplo: true
+        }),
+        cnpj: detectedCompany.cnpj,
+        razaoSocial: detectedCompany.razaoSocial
+      } : company);
+
   const existingKeys = new Set(existingDocs.map(d => d.chaveAcesso));
   const existingHashes = new Set(existingDocs.map(d => d.fileHash));
 
@@ -528,7 +630,7 @@ export async function processBatchXmlFiles(
       onProgress(i + 1, files.length, f.name);
     }
     try {
-      const parseResult = await parseNfeXml(f.content, f.name, company, ruleset, scenario);
+      const parseResult = await parseNfeXml(f.content, f.name, effectiveCompany, ruleset, scenario);
 
       if (!parseResult.success || !parseResult.doc) {
         invalidos++;
@@ -578,6 +680,10 @@ export async function processBatchXmlFiles(
         });
       }
 
+      if (!hasConfiguredCnpj && detectedCompany && doc.tipoOperacaoOrigem === 'AUTOMATICO_CNPJ') {
+        doc.tipoOperacaoOrigem = 'AUTO_DETECCAO_LOTE';
+      }
+
       newDocs.push(doc);
     } catch (err: any) {
       invalidos++;
@@ -596,7 +702,8 @@ export async function processBatchXmlFiles(
       totalDuplicados: duplicados,
       totalInvalidos: invalidos,
       totalParciais: parciais,
-      detalhesPorArquivo: results
+      detalhesPorArquivo: results,
+      detectedCompany
     },
     newDocs
   };

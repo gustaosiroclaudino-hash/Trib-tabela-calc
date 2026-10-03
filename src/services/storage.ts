@@ -6,6 +6,7 @@ import {
 } from '../types';
 import { OFFICIAL_TAX_RULESET_DEFAULT, DEFAULT_SCENARIOS } from './defaultRules';
 import { parseNfeXml } from './nfeParser';
+import { populateItemSimulations } from './taxReformEngine';
 
 export const DEFAULT_COMPANY: CompanyProfile = {
   id: 'empresa-principal',
@@ -160,6 +161,11 @@ export class LocalStorageManager {
           if (doc.tipoOperacaoOrigem === 'CORRECAO_MANUAL') {
             reParsed.doc.tipoOperacao = doc.tipoOperacao;
             reParsed.doc.tipoOperacaoOrigem = 'CORRECAO_MANUAL';
+            const isEntrada = doc.tipoOperacao === 'ENTRADA';
+            reParsed.doc.itens = reParsed.doc.itens.map(it => ({
+              ...it,
+              simulacoesPorAno: populateItemSimulations(it, ruleset, scenario, company, isEntrada)
+            }));
           }
           updatedDocs.push(reParsed.doc);
           continue;

@@ -18,9 +18,11 @@ import {
   CompanyProfile, 
   TaxRuleSet, 
   ScenarioPremises, 
-  FilterState 
+  FilterState,
+  OperationDirection
 } from './types';
 import { LocalStorageManager } from './services/storage';
+import { populateItemSimulations } from './services/taxReformEngine';
 import { Navbar } from './components/Navbar';
 import { FilterBar } from './components/FilterBar';
 import { DashboardTab } from './components/DashboardTab';
@@ -141,23 +143,38 @@ export const App: React.FC = () => {
     window.location.reload();
   };
 
-  // Inverter direção da operação de uma nota (Manual)
+  // Inverter direção da operação de uma nota (Manual com recálculo instantâneo de créditos e débitos)
   const handleToggleOperationDirection = async (docId: string) => {
     const updated = documents.map(d => {
       if (d.id === docId) {
-        const novaDirecao = d.tipoOperacao === 'SAIDA' ? 'ENTRADA' : 'SAIDA';
+        const novaDirecao: OperationDirection = d.tipoOperacao === 'SAIDA' ? 'ENTRADA' : 'SAIDA';
+        const isEntrada = novaDirecao === 'ENTRADA';
+        const novosItens = d.itens.map(item => ({
+          ...item,
+          simulacoesPorAno: populateItemSimulations(item, ruleset, activeScenario, company, isEntrada)
+        }));
         return {
           ...d,
-          tipoOperacao: novaDirecao as any,
-          tipoOperacaoOrigem: 'CORRECAO_MANUAL' as any
+          tipoOperacao: novaDirecao,
+          tipoOperacaoOrigem: 'CORRECAO_MANUAL' as const,
+          itens: novosItens
         };
       }
       return d;
     });
     LocalStorageManager.saveDocuments(updated);
-    // Recalcula para atualizar elegibilidade de crédito
-    const recomputed = await LocalStorageManager.recalculateAllDocuments(ruleset, activeScenario, company);
-    setDocuments(recomputed);
+    setDocuments(updated);
+  };
+
+  // Definir empresa detectada no lote como empresa ativa em análise (Universal para qualquer empresa)
+  const handleSetDetectedCompanyAsActive = async (detected: { cnpj: string; razaoSocial: string }) => {
+    const updatedCompany: CompanyProfile = {
+      ...company,
+      cnpj: detected.cnpj,
+      razaoSocial: detected.razaoSocial,
+      nomeFantasia: detected.razaoSocial
+    };
+    await handleSaveCompany(updatedCompany);
   };
 
   // Confirmação de classificação de item por auditor
@@ -380,6 +397,8 @@ export const App: React.FC = () => {
             ruleset={ruleset}
             activeScenario={activeScenario}
             onClearAllDocs={handleClearAllDocs}
+            onSetDetectedCompanyAsActive={handleSetDetectedCompanyAsActive}
+            onToggleOperationDirection={handleToggleOperationDirection}
           />
         )}
 
@@ -403,6 +422,7 @@ export const App: React.FC = () => {
               setSelectedDocId(doc.id);
               setActiveTab('analise');
             }}
+            onToggleOperationDirection={handleToggleOperationDirection}
           />
         )}
 
@@ -427,6 +447,7 @@ export const App: React.FC = () => {
               setSelectedDocId(doc.id);
               setActiveTab('analise');
             }}
+            onToggleOperationDirection={handleToggleOperationDirection}
           />
         )}
 

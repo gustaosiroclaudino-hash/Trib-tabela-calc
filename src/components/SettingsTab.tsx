@@ -143,16 +143,20 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem', marginBottom: '0.75rem' }}>
               <div>
                 <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.2rem' }}>
-                  CNPJ da Empresa:
+                  CNPJ da Empresa (Foco da Apuração):
                 </label>
                 <input
                   type="text"
                   className="form-control"
                   style={{ width: '100%' }}
                   value={companyForm.cnpj}
+                  placeholder="00.000.000/0000-00"
                   onChange={(e) => setCompanyForm({ ...companyForm, cnpj: e.target.value })}
                   required
                 />
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                  Define a perspectiva da escrituração: notas com este CNPJ como destinatária tornam-se Entradas (créditos) automaticamente.
+                </span>
               </div>
 
               <div>

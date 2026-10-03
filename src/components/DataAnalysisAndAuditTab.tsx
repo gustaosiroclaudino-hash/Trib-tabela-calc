@@ -20,6 +20,7 @@ interface DataAnalysisAndAuditTabProps {
   activeScenario: ScenarioPremises;
   ruleset: TaxRuleSet;
   onSelectDoc: (doc: FiscalDocument) => void;
+  onToggleOperationDirection?: (docId: string) => void;
 }
 
 type GroupByOption = 'NONE' | 'MES' | 'CFOP' | 'NCM' | 'PARCEIRO';
@@ -29,7 +30,8 @@ export const DataAnalysisAndAuditTab: React.FC<DataAnalysisAndAuditTabProps> = (
   activeCompany,
   activeScenario,
   ruleset,
-  onSelectDoc
+  onSelectDoc,
+  onToggleOperationDirection
 }) => {
   const [groupBy, setGroupBy] = useState<GroupByOption>('NONE');
   const [qualityFilter, setQualityFilter] = useState<string>('ALL'); // 'ALL' | 'SEM_NCM' | 'DIVERGENCIA_TOTAIS' | 'PENDENTE'
@@ -366,9 +368,24 @@ export const DataAnalysisAndAuditTab: React.FC<DataAnalysisAndAuditTabProps> = (
                         <strong>NF {doc.numero}</strong>
                       </td>
                       <td>
-                        <span className={`badge ${doc.tipoOperacao === 'SAIDA' ? 'badge-saida' : 'badge-entrada'}`}>
-                          {doc.tipoOperacao}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                          <span className={`badge ${doc.tipoOperacao === 'SAIDA' ? 'badge-saida' : 'badge-entrada'}`}>
+                            {doc.tipoOperacao}
+                          </span>
+                          {onToggleOperationDirection && (
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleOperationDirection(doc.id);
+                              }}
+                              style={{ padding: '0.1rem 0.3rem', fontSize: '0.65rem' }}
+                              title="Inverter direção da operação e recalcular créditos"
+                            >
+                              ⇄
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td style={{ maxWidth: '220px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item.xProd}>
                         {item.xProd}
