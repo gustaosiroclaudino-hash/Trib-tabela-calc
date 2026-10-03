@@ -123,7 +123,6 @@ export const App: React.FC = () => {
     setDocuments(updated);
     if (newDocs.length > 0) {
       setSelectedDocId(newDocs[0].id);
-      setActiveTab('analise');
     }
   };
 

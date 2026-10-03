@@ -57,7 +57,18 @@ export class LocalStorageManager {
   }
 
   static saveDocuments(docs: FiscalDocument[]): void {
-    localStorage.setItem(STORAGE_KEYS.DOCUMENTS, JSON.stringify(docs));
+    try {
+      localStorage.setItem(STORAGE_KEYS.DOCUMENTS, JSON.stringify(docs));
+    } catch (e) {
+      console.warn('LocalStorage quota limite atingido com rawXml completo. Otimizando para persistir lote...', e);
+      try {
+        // Reduz tamanho removendo rawXml redundante mantendo todos os cálculos, tributos e itens
+        const lightDocs = docs.map(d => ({ ...d, rawXml: '' }));
+        localStorage.setItem(STORAGE_KEYS.DOCUMENTS, JSON.stringify(lightDocs));
+      } catch (e2) {
+        console.error('Erro ao salvar documentos no storage após otimização', e2);
+      }
+    }
   }
 
   // --- Regras e Tabelas Legais ---

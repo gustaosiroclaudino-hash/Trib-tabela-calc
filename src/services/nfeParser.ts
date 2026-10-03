@@ -38,28 +38,50 @@ export async function computeFileHash(content: string): Promise<string> {
 }
 
 /**
- * Helper para extrair texto de uma tag com segurança
+ * Helper para localizar elemento filho ignorando prefixo de namespace (ex: nfe:infNFe ou infNFe)
  */
-function getTagText(parent: Element | Document, tagName: string): string {
-  const elements = parent.getElementsByTagName(tagName);
-  if (elements.length > 0 && elements[0].textContent) {
-    return elements[0].textContent.trim();
+export function findFirstElement(parent: Element | Document, tagName: string): Element | null {
+  const direct = parent.getElementsByTagName(tagName);
+  if (direct.length > 0) return direct[0];
+  const target = tagName.toLowerCase();
+  const all = parent.getElementsByTagName('*');
+  for (let i = 0; i < all.length; i++) {
+    const el = all[i];
+    const local = (el.localName || el.nodeName.split(':').pop() || '').toLowerCase();
+    if (local === target) return el;
   }
-  // Busca sem namespace
-  for (let i = 0; i < parent.children.length; i++) {
-    const child = parent.children[i];
-    const localName = child.localName || child.tagName.split(':').pop();
-    if (localName === tagName && child.textContent) {
-      return child.textContent.trim();
-    }
+  return null;
+}
+
+/**
+ * Helper para localizar todos os elementos filhos ignorando namespace
+ */
+export function findAllElements(parent: Element | Document, tagName: string): Element[] {
+  const direct = parent.getElementsByTagName(tagName);
+  if (direct.length > 0) return Array.from(direct);
+  const target = tagName.toLowerCase();
+  const res: Element[] = [];
+  const all = parent.getElementsByTagName('*');
+  for (let i = 0; i < all.length; i++) {
+    const el = all[i];
+    const local = (el.localName || el.nodeName.split(':').pop() || '').toLowerCase();
+    if (local === target) res.push(el);
   }
-  return '';
+  return res;
+}
+
+/**
+ * Helper para extrair texto de uma tag com segurança e tolerância a namespace
+ */
+export function getTagText(parent: Element | Document, tagName: string): string {
+  const found = findFirstElement(parent, tagName);
+  return found?.textContent ? found.textContent.trim() : '';
 }
 
 /**
  * Helper para extrair número float de uma tag
  */
-function getTagFloat(parent: Element | Document, tagName: string): number {
+export function getTagFloat(parent: Element | Document, tagName: string): number {
   const text = getTagText(parent, tagName);
   if (!text) return 0;
   const val = parseFloat(text);
@@ -73,7 +95,7 @@ export function isCfopDevolucao(cfop: string): boolean {
   const c = cfop.replace(/\D/g, '');
   const prefix2 = c.slice(0, 2);
   const prefix4 = c.slice(0, 4);
-  // CFOPs comuns de devolução: 1201, 1202, 1203, 1204, 1410, 1411, 1553, 1660, 2201, 2202, 2203, 2410, 2411, 5201, 5202, 5410, 5411, 6201, 6202, etc.
+  // CFOPs comuns de devolução: 1201, 1202, 1203, 1204, 1410, 1411, 1553, 1660, 2201, 2202, 2203, 2410, 2411, 5201, 5202, etc.
   const devolucaoCfops = ['1201', '1202', '1203', '1204', '1410', '1411', '1553', '1660', '1661', '1662',
                           '2201', '2202', '2203', '2204', '2410', '2411', '2553', '2660', '2661', '2662',
                           '5201', '5202', '5410', '5411', '5553', '5660', '5661', '5662',
@@ -83,7 +105,7 @@ export function isCfopDevolucao(cfop: string): boolean {
 }
 
 /**
- * Parser de NF-e / NFC-e seguro e completo
+ * Parser de NF-e / NFC-e seguro e tolerante a múltiplos formatos
  */
 export async function parseNfeXml(
   xmlContent: string,
@@ -94,58 +116,74 @@ export async function parseNfeXml(
 ): Promise<{ success: boolean; doc?: FiscalDocument; error?: string; warnings?: string[] }> {
   const warnings: string[] = [];
 
-  // 1. Limite de tamanho e prevenção de conteúdo malicioso
   if (!xmlContent || xmlContent.trim().length === 0) {
     return { success: false, error: 'Arquivo XML vazio.' };
   }
-  if (xmlContent.length > 20 * 1024 * 1024) { // 20 MB max
-    return { success: false, error: 'Arquivo XML excede o tamanho máximo suportado de 20 MB.' };
+  if (xmlContent.length > 25 * 1024 * 1024) {
+    return { success: false, error: 'Arquivo XML excede o tamanho máximo de 25 MB.' };
   }
 
-  // 2. DOMParser seguro contra XXE
+  // 1. Sanitização profunda de XML
+  let cleanXml = xmlContent.replace(/^\uFEFF/, '').trim();
+  const firstTagIndex = cleanXml.indexOf('<');
+  if (firstTagIndex > 0) {
+    cleanXml = cleanXml.substring(firstTagIndex);
+  }
+  // Normaliza declaração de encoding para evitar falha no DOMParser do browser com ISO-8859-1
+  cleanXml = cleanXml.replace(/<\?xml[^>]*\?>/i, (match) => {
+    return match.replace(/encoding=["'][^"']+["']/i, 'encoding="UTF-8"');
+  });
+
+  // 2. DOMParser seguro
   const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(xmlContent, 'text/xml');
+  const xmlDoc = parser.parseFromString(cleanXml, 'text/xml');
 
   // Verifica erro de sintaxe do XML
   const parseError = xmlDoc.getElementsByTagName('parsererror');
   if (parseError.length > 0) {
     return { 
       success: false, 
-      error: `Estrutura de XML inválida ou malformada: ${parseError[0].textContent?.slice(0, 150) || 'Erro desconhecido'}` 
+      error: `Estrutura de XML inválida ou malformada: ${parseError[0].textContent?.slice(0, 150) || 'Erro de sintaxe'}` 
     };
   }
 
-  // 3. Localizar tag NFe ou infNFe
-  const infNFeList = xmlDoc.getElementsByTagName('infNFe');
-  if (infNFeList.length === 0) {
-    // Pode ser evento de cancelamento isolado
-    const retEvento = xmlDoc.getElementsByTagName('retEvento')[0] || xmlDoc.getElementsByTagName('infEvento')[0];
+  // 3. Localizar tag infNFe
+  const infNFe = findFirstElement(xmlDoc, 'infNFe');
+  if (!infNFe) {
+    const retEvento = findFirstElement(xmlDoc, 'retEvento') || findFirstElement(xmlDoc, 'infEvento');
     if (retEvento) {
       return { 
         success: false, 
-        error: 'Arquivo identificado como evento avulso (ex: cancelamento/carta de correção) sem o corpo principal da NF-e.' 
+        error: 'Arquivo identificado como evento avulso (ex: cancelamento/CC-e) sem o corpo principal da NF-e.' 
       };
     }
-    return { success: false, error: 'Tag <infNFe> não encontrada no documento. Certifique-se de que é uma NF-e ou NFC-e válida.' };
+    return { success: false, error: 'Tag <infNFe> não encontrada no documento. Certifique-se de que é um XML de NF-e ou NFC-e válido.' };
   }
 
-  const infNFe = infNFeList[0];
-  const fileHash = await computeFileHash(xmlContent);
+  const fileHash = await computeFileHash(cleanXml);
 
-  // Chave de acesso: do atributo Id="NFe35..." ou da tag chNFe
-  let chaveAcesso = infNFe.getAttribute('Id')?.replace('NFe', '') || '';
-  if (!chaveAcesso || chaveAcesso.length !== 44) {
-    const chNFeTag = getTagText(xmlDoc, 'chNFe');
-    if (chNFeTag && chNFeTag.length === 44) {
+  // Chave de acesso: do atributo Id="NFe35..." ou da tag chNFe ou regex
+  let chaveAcesso = (infNFe.getAttribute('Id') || infNFe.getAttribute('id') || '')
+    .replace(/^NFe/i, '')
+    .replace(/\D/g, '');
+
+  if (chaveAcesso.length !== 44) {
+    const chNFeTag = getTagText(xmlDoc, 'chNFe').replace(/\D/g, '');
+    if (chNFeTag.length === 44) {
       chaveAcesso = chNFeTag;
     } else {
-      chaveAcesso = `GEN_${fileHash.slice(0, 20)}_${Date.now()}`;
-      warnings.push('Chave de acesso de 44 dígitos não encontrada; gerado identificador interno.');
+      const match = cleanXml.match(/Id=["']NFe(\d{44})["']/i) || cleanXml.match(/<chNFe>(\d{44})<\/chNFe>/i);
+      if (match && match[1]) {
+        chaveAcesso = match[1];
+      } else {
+        chaveAcesso = `GEN_${fileHash.slice(0, 20)}_${Date.now()}`;
+        warnings.push('Chave de acesso de 44 dígitos não identificada; gerado ID seguro.');
+      }
     }
   }
 
   // Identificação da Nota (<ide>)
-  const ide = infNFe.getElementsByTagName('ide')[0];
+  const ide = findFirstElement(infNFe, 'ide');
   const modelo = ide ? (getTagText(ide, 'mod') || '55') : '55';
   const serie = ide ? getTagText(ide, 'serie') : '1';
   const nNF = ide ? getTagText(ide, 'nNF') : '';
@@ -154,7 +192,7 @@ export async function parseNfeXml(
   const tpNF = ide ? getTagText(ide, 'tpNF') : '1'; // 0 = entrada, 1 = saída
 
   // Documentos referenciados (<NFref>)
-  const refNFeElements = xmlDoc.getElementsByTagName('refNFe');
+  const refNFeElements = findAllElements(xmlDoc, 'refNFe');
   const notasReferenciadas: string[] = [];
   for (let i = 0; i < refNFeElements.length; i++) {
     if (refNFeElements[i].textContent) {
@@ -163,19 +201,19 @@ export async function parseNfeXml(
   }
 
   // Emitente (<emit>)
-  const emit = infNFe.getElementsByTagName('emit')[0];
+  const emit = findFirstElement(infNFe, 'emit');
   const emitCnpj = emit ? (getTagText(emit, 'CNPJ') || getTagText(emit, 'CPF')) : '';
   const emitNome = emit ? (getTagText(emit, 'xNome') || getTagText(emit, 'xFant') || 'Emitente Desconhecido') : '';
-  const enderEmit = emit ? emit.getElementsByTagName('enderEmit')[0] : null;
+  const enderEmit = emit ? findFirstElement(emit, 'enderEmit') : null;
   const emitUf = enderEmit ? getTagText(enderEmit, 'UF') : (emit ? getTagText(emit, 'UF') : '');
   const emitMun = enderEmit ? getTagText(enderEmit, 'xMun') : '';
   const emitCodMun = enderEmit ? getTagText(enderEmit, 'cMun') : '';
 
   // Destinatário (<dest>)
-  const dest = infNFe.getElementsByTagName('dest')[0];
+  const dest = findFirstElement(infNFe, 'dest');
   const destCnpj = dest ? (getTagText(dest, 'CNPJ') || getTagText(dest, 'CPF')) : '';
   const destNome = dest ? (getTagText(dest, 'xNome') || 'Consumidor / Destinatário') : '';
-  const enderDest = dest ? dest.getElementsByTagName('enderDest')[0] : null;
+  const enderDest = dest ? findFirstElement(dest, 'enderDest') : null;
   const destUf = enderDest ? getTagText(enderDest, 'UF') : (dest ? getTagText(dest, 'UF') : '');
   const destMun = enderDest ? getTagText(enderDest, 'xMun') : '';
   const destCodMun = enderDest ? getTagText(enderDest, 'cMun') : '';
@@ -202,8 +240,8 @@ export async function parseNfeXml(
   }
 
   // Totais do XML (<total><ICMSTot>)
-  const total = infNFe.getElementsByTagName('total')[0];
-  const icmsTot = total ? total.getElementsByTagName('ICMSTot')[0] : null;
+  const total = findFirstElement(infNFe, 'total');
+  const icmsTot = total ? findFirstElement(total, 'ICMSTot') : null;
 
   const totais: FiscalTotals = {
     vProd: icmsTot ? getTagFloat(icmsTot, 'vProd') : 0,
@@ -226,7 +264,7 @@ export async function parseNfeXml(
   );
 
   // Itens (<det>)
-  const detList = infNFe.getElementsByTagName('det');
+  const detList = findAllElements(infNFe, 'det');
   const itens: FiscalItem[] = [];
   let somaVProdItens = 0;
   let hasDevolucaoItem = false;
@@ -234,8 +272,8 @@ export async function parseNfeXml(
   for (let i = 0; i < detList.length; i++) {
     const det = detList[i];
     const nItem = parseInt(det.getAttribute('nItem') || `${i + 1}`, 10);
-    const prod = det.getElementsByTagName('prod')[0];
-    const imposto = det.getElementsByTagName('imposto')[0];
+    const prod = findFirstElement(det, 'prod');
+    const imposto = findFirstElement(det, 'imposto');
 
     const cProd = prod ? getTagText(prod, 'cProd') : `ITEM_${nItem}`;
     const xProd = prod ? getTagText(prod, 'xProd') : `Produto ${nItem}`;
@@ -259,7 +297,7 @@ export async function parseNfeXml(
 
     // Extração de Tributos Legados do Item
     // ICMS
-    const icmsElem = imposto ? imposto.getElementsByTagName('ICMS')[0] : null;
+    const icmsElem = imposto ? findFirstElement(imposto, 'ICMS') : null;
     let cstIcms = '';
     let orig = '0';
     let vBCIcms = 0;
@@ -269,20 +307,22 @@ export async function parseNfeXml(
     let pICMSST = 0;
     let vICMSST = 0;
 
-    if (icmsElem && icmsElem.firstElementChild) {
-      const icmsChild = icmsElem.firstElementChild;
-      cstIcms = getTagText(icmsChild, 'CST') || getTagText(icmsChild, 'CSOSN') || '';
-      orig = getTagText(icmsChild, 'orig') || '0';
-      vBCIcms = getTagFloat(icmsChild, 'vBC');
-      pICMS = getTagFloat(icmsChild, 'pICMS');
-      vICMS = getTagFloat(icmsChild, 'vICMS');
-      vBCST = getTagFloat(icmsChild, 'vBCST');
-      pICMSST = getTagFloat(icmsChild, 'pICMSST');
-      vICMSST = getTagFloat(icmsChild, 'vICMSST');
+    if (icmsElem) {
+      const icmsChild = icmsElem.firstElementChild || (icmsElem.children.length > 0 ? icmsElem.children[0] : null);
+      if (icmsChild) {
+        cstIcms = getTagText(icmsChild, 'CST') || getTagText(icmsChild, 'CSOSN') || '';
+        orig = getTagText(icmsChild, 'orig') || '0';
+        vBCIcms = getTagFloat(icmsChild, 'vBC');
+        pICMS = getTagFloat(icmsChild, 'pICMS');
+        vICMS = getTagFloat(icmsChild, 'vICMS');
+        vBCST = getTagFloat(icmsChild, 'vBCST');
+        pICMSST = getTagFloat(icmsChild, 'pICMSST');
+        vICMSST = getTagFloat(icmsChild, 'vICMSST');
+      }
     }
 
     // IPI
-    const ipiElem = imposto ? imposto.getElementsByTagName('IPI')[0] : null;
+    const ipiElem = imposto ? findFirstElement(imposto, 'IPI') : null;
     let cstIpi: string | undefined = undefined;
     let vBCIpi = 0;
     let pIPI = 0;
@@ -295,7 +335,7 @@ export async function parseNfeXml(
     }
 
     // PIS
-    const pisElem = imposto ? imposto.getElementsByTagName('PIS')[0] : null;
+    const pisElem = imposto ? findFirstElement(imposto, 'PIS') : null;
     let cstPis: string | undefined = undefined;
     let vBCPis = 0;
     let pPIS = 0;
@@ -308,7 +348,7 @@ export async function parseNfeXml(
     }
 
     // COFINS
-    const cofinsElem = imposto ? imposto.getElementsByTagName('COFINS')[0] : null;
+    const cofinsElem = imposto ? findFirstElement(imposto, 'COFINS') : null;
     let cstCofins: string | undefined = undefined;
     let vBCCofins = 0;
     let pCOFINS = 0;
@@ -468,7 +508,8 @@ export async function processBatchXmlFiles(
   existingDocs: FiscalDocument[],
   company?: CompanyProfile,
   ruleset?: TaxRuleSet,
-  scenario?: ScenarioPremises
+  scenario?: ScenarioPremises,
+  onProgress?: (current: number, total: number, fileName: string) => void
 ): Promise<{ summary: ImportSummary; newDocs: FiscalDocument[] }> {
   const existingKeys = new Set(existingDocs.map(d => d.chaveAcesso));
   const existingHashes = new Set(existingDocs.map(d => d.fileHash));
@@ -481,7 +522,11 @@ export async function processBatchXmlFiles(
   let invalidos = 0;
   let parciais = 0;
 
-  for (const f of files) {
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    if (onProgress) {
+      onProgress(i + 1, files.length, f.name);
+    }
     try {
       const parseResult = await parseNfeXml(f.content, f.name, company, ruleset, scenario);
 
