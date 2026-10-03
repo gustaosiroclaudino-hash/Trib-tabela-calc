@@ -39,9 +39,9 @@ export const YEAR_DEFINITIONS: Record<number, YearRuleDefinition> = {
   },
   2027: {
     ano: 2027,
-    descricaoFase: 'Cobrança plena da CBS; IBS transição (0,1%); Extinção de PIS e COFINS',
+    descricaoFase: 'Cobrança efetiva da CBS (-0,1% p.p.); IBS transição (0,1%); Extinção de PIS e COFINS',
     baseLegal: 'EC 132/2023, Art. 126 e LC 214/2025, Art. 58',
-    getCbsRate: (stdRate) => stdRate, // 8.8%
+    getCbsRate: (stdRate) => Math.max(0, roundCurrency((stdRate - 0.001) * 10000) / 10000), // 8.7% conforme Art. 126 da EC 132
     getIbsFraction: () => 0.001 / 0.177, // 0.1% teste estadual/municipal
     isTesteYear: false,
     fatorResidualIcmsIss: 1.0,
@@ -51,9 +51,9 @@ export const YEAR_DEFINITIONS: Record<number, YearRuleDefinition> = {
   },
   2028: {
     ano: 2028,
-    descricaoFase: 'CBS em regime pleno; IBS transição (0,1%); PIS/COFINS extintos',
-    baseLegal: 'EC 132/2023, Art. 127 e LC 214/2025',
-    getCbsRate: (stdRate) => stdRate,
+    descricaoFase: 'CBS com redução de 0,1% p.p.; IBS transição (0,1%); PIS/COFINS extintos',
+    baseLegal: 'EC 132/2023, Art. 126/127 e LC 214/2025',
+    getCbsRate: (stdRate) => Math.max(0, roundCurrency((stdRate - 0.001) * 10000) / 10000), // 8.7%
     getIbsFraction: () => 0.001 / 0.177,
     isTesteYear: false,
     fatorResidualIcmsIss: 1.0,
@@ -189,6 +189,10 @@ export function calculateItemReformaSimulation(
       creditoEstimadoValor: 0,
       creditoStatus: 'NAO_ELEGIVEL',
       creditoExplicacao: 'Item sem código NCM válido no XML. Conforme o Guia, a célula torna-se "não calculável" em vez de presumir dados.',
+      baseCalculoUtilizada: 0,
+      estrategiaPrecoAplicada: scenario.estrategiaPreco || 'PRECO_BRUTO',
+      teseIcmsAplicada: scenario.teseIcms || 'FISCO',
+      contingenciaIcms: 0,
       tipoRegraAplicada: 'PADRAO',
       descricaoRegra: 'NCM não informado ou inválido',
       baseLegal: 'Art. 4º da LC 214/2025',
@@ -209,25 +213,43 @@ export function calculateItemReformaSimulation(
     };
   }
 
-  // 1. Base de Cálculo da Operação
-  // Base = Preço do item - Desconto + Frete + Seguro + Outras Despesas
+  // 1. Premissas de Cenário: Estratégia de Preço e Tese de ICMS
+  const estrategiaPreco = scenario.estrategiaPreco || 'PRECO_BRUTO';
+  const teseIcms = scenario.teseIcms || 'FISCO';
+  const neutralizar2026 = scenario.neutralizarAnoTeste2026 !== false;
+
+  // Base Operação Contratual = Preço do item - Desconto + Frete + Seguro + Outras Despesas
   const baseOperacao = roundCurrency(item.vProd - item.vDesc + item.vFrete + item.vSeg + item.vOutro);
   
+  const legado = item.tributosLegados;
+  const totalLegadoItem = roundCurrency(
+    legado.vICMS + (legado.vISS || 0) + legado.vPIS + legado.vCOFINS + legado.vIPI
+  );
+
+  // Base de Cálculo adotada:
+  // Se PRECO_DESONERADO: subtrai os tributos legados embutidos "por dentro" (Receita Líquida Alvo / Metodologia MGK)
+  // Se PRECO_BRUTO: mantém o valor da operação integral negociado (Art. 12 da LC 214/2025)
+  const baseCalculo = estrategiaPreco === 'PRECO_DESONERADO'
+    ? roundCurrency(Math.max(0, baseOperacao - totalLegadoItem))
+    : baseOperacao;
+
   memoria.push({
     step: 1,
-    titulo: 'Composição da Base de Cálculo da Operação',
-    formula: 'Base = vProd - vDesc + vFrete + vSeg + vOutro',
+    titulo: `Composição da Base de Cálculo (${estrategiaPreco === 'PRECO_DESONERADO' ? 'Receita Líquida Desonerada' : 'Valor da Operação Bruto'})`,
+    formula: estrategiaPreco === 'PRECO_DESONERADO'
+      ? 'Base = (vProd - vDesc + vFrete + vSeg + vOutro) - TributosLegados'
+      : 'Base = vProd - vDesc + vFrete + vSeg + vOutro',
     valoresEntrada: {
-      vProd: item.vProd.toFixed(2),
-      vDesc: item.vDesc.toFixed(2),
-      vFrete: item.vFrete.toFixed(2),
-      vSeg: item.vSeg.toFixed(2),
-      vOutro: item.vOutro.toFixed(2)
+      baseOperacao: baseOperacao.toFixed(2),
+      tributosLegadosDeduzidos: estrategiaPreco === 'PRECO_DESONERADO' ? totalLegadoItem.toFixed(2) : 'R$ 0,00',
+      estrategia: estrategiaPreco
     },
-    resultadoParcial: baseOperacao.toFixed(2),
+    resultadoParcial: baseCalculo.toFixed(2),
     arredondamento: '2 casas decimais',
-    baseLegal: 'LC 214/2025, Art. 12',
-    observacao: 'Base ampla sobre o valor da operação sem tributos por dentro.'
+    baseLegal: estrategiaPreco === 'PRECO_DESONERADO' ? 'Metodologia MGK / Repasse Competitivo' : 'LC 214/2025, Art. 12',
+    observacao: estrategiaPreco === 'PRECO_DESONERADO'
+      ? 'Preço expurgado de ICMS, PIS e COFINS para manter margem líquida alvo.'
+      : 'Base ampla sobre o valor da operação sem exclusão do legado.'
   });
 
   // 2. Busca de regra especial por NCM
@@ -284,8 +306,9 @@ export function calculateItemReformaSimulation(
     ibsMunicipalEfetivaAno = roundCurrency(ibsTeste * (1 - proporcaoEst) * (1 - fatorReducao) * 10000) / 10000;
   } else {
     // Anos 2027 a 2033
-    // CBS entra com valor de referência total a partir de 2027
-    cbsEfetivaAno = roundCurrency(cbsNominalRef * (1 - fatorReducao) * 10000) / 10000;
+    // CBS entra com taxa do ano (com dedução de 0,1% p.p. em 2027/2028 conforme Art. 126 da EC 132/2023)
+    const cbsBase = yearDef.getCbsRate(cbsNominalRef, ruleset.aliquotasReferencia.cbsTeste2026);
+    cbsEfetivaAno = roundCurrency(cbsBase * (1 - fatorReducao) * 10000) / 10000;
     
     // IBS entra conforme a fração do ano da transição (0.10, 0.20, 0.30, 0.40, 1.00)
     const ibsFrac = yearDef.getIbsFraction();
@@ -293,18 +316,18 @@ export function calculateItemReformaSimulation(
     ibsMunicipalEfetivaAno = roundCurrency(ibsMunicipalNominalRef * ibsFrac * (1 - fatorReducao) * 10000) / 10000;
   }
 
-  // 4. Valores de CBS e IBS
-  const valorCBS = roundCurrency(baseOperacao * cbsEfetivaAno);
-  const valorIBSEstadual = roundCurrency(baseOperacao * ibsEstadualEfetivaAno);
-  const valorIBSMunicipal = roundCurrency(baseOperacao * ibsMunicipalEfetivaAno);
+  // 4. Valores de CBS e IBS sobre a baseCalculo
+  const valorCBS = roundCurrency(baseCalculo * cbsEfetivaAno);
+  const valorIBSEstadual = roundCurrency(baseCalculo * ibsEstadualEfetivaAno);
+  const valorIBSMunicipal = roundCurrency(baseCalculo * ibsMunicipalEfetivaAno);
   const valorIBSTotal = roundCurrency(valorIBSEstadual + valorIBSMunicipal);
 
   memoria.push({
     step: 2,
     titulo: `Cálculo da CBS Federal para ${ano}`,
-    formula: `Valor CBS = Base × (AlíquotaNominal × (1 - FatorRedução))`,
+    formula: `Valor CBS = Base (${baseCalculo.toFixed(2)}) × (AlíquotaNominal × (1 - FatorRedução))`,
     valoresEntrada: {
-      base: baseOperacao.toFixed(2),
+      base: baseCalculo.toFixed(2),
       aliquotaEfetiva: (cbsEfetivaAno * 100).toFixed(3) + '%',
       fatorReducao: (fatorReducao * 100).toFixed(0) + '%'
     },
@@ -317,9 +340,9 @@ export function calculateItemReformaSimulation(
   memoria.push({
     step: 3,
     titulo: `Cálculo do IBS Estadual e Municipal para ${ano}`,
-    formula: `Valor IBS = Base × (AlíquotaRef × FraçãoTransição × (1 - FatorRedução))`,
+    formula: `Valor IBS = Base (${baseCalculo.toFixed(2)}) × (AlíquotaRef × FraçãoTransição × (1 - FatorRedução))`,
     valoresEntrada: {
-      base: baseOperacao.toFixed(2),
+      base: baseCalculo.toFixed(2),
       ibsEstadualEfetivo: (ibsEstadualEfetivaAno * 100).toFixed(3) + '%',
       ibsMunicipalEfetivo: (ibsMunicipalEfetivaAno * 100).toFixed(3) + '%',
       fracaoAno: (yearDef.getIbsFraction() * 100).toFixed(1) + '%'
@@ -338,7 +361,7 @@ export function calculateItemReformaSimulation(
 
   if (scenario.considerarIs && regraNcm && regraNcm.tipoRegra === 'imposto_seletivo' && ano >= 2027) {
     aplicaIS = true;
-    baseIS = baseOperacao;
+    baseIS = baseCalculo;
     aliquotaIS = regraNcm.aliquotaSeletivo || 0.15;
     valorIS = roundCurrency(baseIS * aliquotaIS);
 
@@ -357,10 +380,46 @@ export function calculateItemReformaSimulation(
     });
   }
 
-  // 6. Tributos Legados Residuais no ano da simulação
-  const legado = item.tributosLegados;
-  const valorResidualIcmsIss = roundCurrency((legado.vICMS + (legado.vISS || 0)) * yearDef.fatorResidualIcmsIss);
-  const valorResidualPisCofins = roundCurrency((legado.vPIS + legado.vCOFINS) * yearDef.fatorResidualPisCofins);
+  // 6. Tributos Legados Residuais no ano da simulação & Teses de ICMS (Gross-up)
+  let valorResidualIcmsIss = 0;
+  let contingenciaIcms = 0;
+
+  const nominalIcmsRate = baseOperacao > 0 ? (legado.vICMS / baseOperacao) : 0.18;
+  const effectiveIcmsRate = nominalIcmsRate * yearDef.fatorResidualIcmsIss;
+
+  if (yearDef.fatorResidualPisCofins === 0 && effectiveIcmsRate > 0) {
+    // Post 2027: PIS e COFINS extintos. Recálculo da base por dentro sobre a receita líquida alvo
+    const cbsIbsSum = valorCBS + valorIBSTotal;
+
+    // Tese do Fisco (SEFAZ/SP RC 32.303/2025): IBS e CBS integram a base do ICMS
+    const vProdFisco = (baseCalculo + effectiveIcmsRate * cbsIbsSum) / (1 - effectiveIcmsRate);
+    const taxIcmsFisco = roundCurrency((vProdFisco + cbsIbsSum) * effectiveIcmsRate);
+
+    // Tese do Contribuinte (PLP 16/2025): IBS e CBS NÃO integram a base do ICMS
+    const vProdContrib = baseCalculo / (1 - effectiveIcmsRate);
+    const taxIcmsContrib = roundCurrency(vProdContrib * effectiveIcmsRate);
+
+    contingenciaIcms = roundCurrency(Math.max(0, taxIcmsFisco - taxIcmsContrib));
+
+    if (teseIcms === 'FISCO') {
+      valorResidualIcmsIss = taxIcmsFisco;
+    } else if (teseIcms === 'CONTRIBUINTE') {
+      valorResidualIcmsIss = taxIcmsContrib;
+    } else {
+      valorResidualIcmsIss = roundCurrency((legado.vICMS + (legado.vISS || 0)) * yearDef.fatorResidualIcmsIss);
+    }
+  } else {
+    // 2026 ou anos em que ICMS está extinto (2033)
+    valorResidualIcmsIss = roundCurrency((legado.vICMS + (legado.vISS || 0)) * yearDef.fatorResidualIcmsIss);
+  }
+
+  // PIS / COFINS (com compensação em 2026 se neutralizado)
+  let valorResidualPisCofins = roundCurrency((legado.vPIS + legado.vCOFINS) * yearDef.fatorResidualPisCofins);
+  if (yearDef.isTesteYear && neutralizar2026) {
+    // Compensável contra PIS/COFINS (EC 132/2023, Art. 125, § 1º)
+    valorResidualPisCofins = Math.max(0, roundCurrency(valorResidualPisCofins - (valorCBS + valorIBSTotal)));
+  }
+
   const valorResidualIpi = roundCurrency(legado.vIPI * yearDef.fatorResidualIpi);
 
   // Total da carga tributária estimada neste ano
@@ -375,20 +434,16 @@ export function calculateItemReformaSimulation(
   let creditoExplicacao = 'Operação de saída (venda) não gera apropriação direta de crédito fiscal de compra.';
 
   if (isEntrada) {
-    // Na entrada, avaliar regime da empresa e não-cumulatividade plena
     if (companyProfile?.regimeTributario === 'SIMPLES_NACIONAL') {
       creditoStatus = 'CONFIRMACAO_PENDENTE';
       creditoExplicacao = 'Empresa no Simples Nacional: transferência de crédito depende da faixa do Simples e de opção expressa pelo regime geral (Art. 41 da LC 214).';
     } else {
-      // Regime Geral (Lucro Real ou Presumido migrado)
       if (tipoRegra === 'CESTA_BASICA_ZERO') {
         creditoStatus = 'DOCUMENTO';
-        creditoElegivel = false; // Isenção não gera débito anterior para crédito
+        creditoElegivel = false;
         creditoExplicacao = 'Cesta básica com alíquota zero: conforme a lei, não há valor cobrado na etapa anterior a creditar.';
       } else {
         creditoElegivel = true;
-        // Na reforma, o crédito corresponde exatamente ao CBS + IBS destacado na nota de compra
-        // ajustado pelo fator do cenário (se conservador)
         const valorCreditoBruto = valorCBS + valorIBSTotal;
         creditoEstimadoValor = roundCurrency(valorCreditoBruto * scenario.aproveitamentoCreditoFator);
         creditoStatus = 'POTENCIAL';
@@ -400,17 +455,17 @@ export function calculateItemReformaSimulation(
   return {
     ano,
     cenarioId: scenario.id,
-    baseCBS: baseOperacao,
+    baseCBS: baseCalculo,
     aliquotaCBSNominal: cbsNominalRef,
     fatorReducaoCBS: fatorReducao,
     aliquotaCBSEfetiva: cbsEfetivaAno,
     valorCBS,
-    baseIBSEstadual: baseOperacao,
+    baseIBSEstadual: baseCalculo,
     aliquotaIBSEstadualNominal: ibsEstadualNominalRef,
     fatorReducaoIBSEstadual: fatorReducao,
     aliquotaIBSEstadualEfetiva: ibsEstadualEfetivaAno,
     valorIBSEstadual,
-    baseIBSMunicipal: baseOperacao,
+    baseIBSMunicipal: baseCalculo,
     aliquotaIBSMunicipalNominal: ibsMunicipalNominalRef,
     fatorReducaoIBSMunicipal: fatorReducao,
     aliquotaIBSMunicipalEfetiva: ibsMunicipalEfetivaAno,
@@ -431,6 +486,10 @@ export function calculateItemReformaSimulation(
     creditoEstimadoValor,
     creditoStatus,
     creditoExplicacao,
+    baseCalculoUtilizada: baseCalculo,
+    estrategiaPrecoAplicada: estrategiaPreco,
+    teseIcmsAplicada: teseIcms,
+    contingenciaIcms,
     tipoRegraAplicada: tipoRegra,
     descricaoRegra,
     baseLegal: baseLegalRegra,

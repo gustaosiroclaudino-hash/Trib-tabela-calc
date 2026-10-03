@@ -124,7 +124,11 @@ export interface TaxReformaSimulationItem {
   creditoStatus: CreditEligibilityStatus;
   creditoExplicacao: string;
   
-  // Metadados didáticos e auditoria
+  // Metadados didáticos, teses e auditoria
+  baseCalculoUtilizada: number;
+  estrategiaPrecoAplicada: 'PRECO_BRUTO' | 'PRECO_DESONERADO';
+  teseIcmsAplicada: 'SIMPLES_HISTORICO' | 'FISCO' | 'CONTRIBUINTE';
+  contingenciaIcms: number; // Diferença entre Tese do Fisco e Tese do Contribuinte
   tipoRegraAplicada: 'PADRAO' | 'CESTA_BASICA_ZERO' | 'REDUCAO_60' | 'REDUCAO_30' | 'MONOFASICO' | 'ISENTO_ESPECIFICO';
   descricaoRegra: string;
   baseLegal: string;
@@ -243,13 +247,16 @@ export interface SpecialRuleNCM {
 
 export interface ScenarioPremises {
   id: string;
-  nome: string; // 'Base', 'Conservador', 'Otimista'
+  nome: string; // 'Base', 'Conservador', 'Otimista', 'Desonerado'
   descricao: string;
   aliquotaReferenciaCBS: number; // ex: 0.088 (8.8%)
   aliquotaReferenciaIBSEstadual: number; // ex: 0.120 (12.0%)
   aliquotaReferenciaIBSMunicipal: number; // ex: 0.057 (5.7%)
   aproveitamentoCreditoFator: number; // 1.0 = 100%, 0.85 = 85% no conservador
   considerarIs: boolean;
+  estrategiaPreco?: 'PRECO_BRUTO' | 'PRECO_DESONERADO'; // default: 'PRECO_BRUTO'
+  teseIcms?: 'SIMPLES_HISTORICO' | 'FISCO' | 'CONTRIBUINTE'; // default: 'FISCO'
+  neutralizarAnoTeste2026?: boolean; // default: true (compensação imediata de CBS/IBS no PIS/COFINS)
   dataAtualizacao: string;
 }
 

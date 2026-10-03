@@ -10,6 +10,7 @@ import {
   HelpCircle,
   Sparkles,
   Building2,
+  BookOpen,
   X
 } from 'lucide-react';
 import { 
@@ -29,8 +30,9 @@ import { EntryExitTab } from './components/EntryExitTab';
 import { SimulatorTab } from './components/SimulatorTab';
 import { DataAnalysisAndAuditTab } from './components/DataAnalysisAndAuditTab';
 import { SettingsTab } from './components/SettingsTab';
+import { MetodologiaTab } from './components/MetodologiaTab';
 
-export type TabId = 'dashboard' | 'importar' | 'analise' | 'confronto' | 'simulador' | 'qualidade' | 'configuracao';
+export type TabId = 'dashboard' | 'importar' | 'analise' | 'confronto' | 'simulador' | 'qualidade' | 'metodologia' | 'configuracao';
 
 export const App: React.FC = () => {
   // Estados Globais
@@ -334,6 +336,17 @@ export const App: React.FC = () => {
         </button>
 
         <button
+          className={`nav-tab-btn ${activeTab === 'metodologia' ? 'active' : ''}`}
+          onClick={() => setActiveTab('metodologia')}
+        >
+          <BookOpen size={16} />
+          <span>Guia & Metodologia</span>
+          <span className="badge badge-lido" style={{ fontSize: '0.62rem', padding: '0.1rem 0.35rem' }}>
+            Didático
+          </span>
+        </button>
+
+        <button
           className={`nav-tab-btn ${activeTab === 'configuracao' ? 'active' : ''}`}
           onClick={() => setActiveTab('configuracao')}
         >
@@ -426,6 +439,12 @@ export const App: React.FC = () => {
               setSelectedDocId(doc.id);
               setActiveTab('analise');
             }}
+          />
+        )}
+
+        {activeTab === 'metodologia' && (
+          <MetodologiaTab
+            onNavigateToTab={(tab) => setActiveTab(tab as TabId)}
           />
         )}
 

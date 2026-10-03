@@ -403,9 +403,12 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
         {/* Gráfico 2: Evolução da Carga ao Longo da Transição (2026 a 2033) */}
         <div className="chart-card">
           <div className="chart-title">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
               <TrendingUp size={18} color="var(--accent-emerald)" />
               <span>Transição da Carga Tributária Anual Estimada (R$)</span>
+              <span className="badge badge-calculado" style={{ fontSize: '0.7rem' }}>
+                {activeScenario.estrategiaPreco === 'PRECO_DESONERADO' ? 'Base Desonerada (MGK)' : 'Base Bruta (LC 214)'}
+              </span>
             </div>
             <button className="btn btn-secondary btn-sm" onClick={() => onNavigateToTab('simulador')}>
               Ver Matriz Completa
@@ -413,34 +416,37 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           </div>
 
           <div style={{ padding: '0.5rem 0' }}>
-            {/* Barras de Anos da Transição */}
-            {[2026, 2027, 2029, 2031, 2033].map(ano => {
-              let cargaAno = 0;
-              saidasDocs.forEach(d => {
-                d.itens.forEach(item => {
-                  const sim = item.simulacoesPorAno[ano];
-                  if (sim) cargaAno += sim.totalCargaEstimada;
+            {(() => {
+              const anosTransicao = [2026, 2027, 2029, 2031, 2033];
+              const dadosTransicao = anosTransicao.map(ano => {
+                let cargaAno = 0;
+                saidasDocs.forEach(d => {
+                  d.itens.forEach(item => {
+                    const sim = item.simulacoesPorAno[ano];
+                    if (sim) cargaAno += sim.totalCargaEstimada;
+                  });
                 });
+                return { ano, cargaAno };
               });
-              // Para 2026, soma com o legado residual pois é ano-teste
-              if (ano === 2026) cargaAno += totalTributosDestacados;
 
-              const maxRef = Math.max(totalTributosDestacados, totalReforma2033, cargaAno, 1);
-              const pctWidth = Math.min(100, Math.round((cargaAno / maxRef) * 100));
+              const maxRef = Math.max(totalTributosDestacados, ...dadosTransicao.map(d => d.cargaAno), 1);
 
-              return (
-                <div key={ano} style={{ marginBottom: '0.75rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.2rem' }}>
-                    <span style={{ fontWeight: 600 }}>
-                      {ano} {ano === 2026 ? '(Ano-Teste CBS 0,9%/IBS 0,1%)' : ano === 2033 ? '(Modelo Novo Pleno)' : `(Transição)`}
-                    </span>
-                    <strong style={{ color: 'var(--text-highlight)' }}>
-                      R$ {cargaAno.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </strong>
-                  </div>
-                  <div style={{ height: '8px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
-                    <div 
-                      style={{ 
+              return dadosTransicao.map(({ ano, cargaAno }) => {
+                const pctWidth = Math.min(100, Math.max(10, Math.round((cargaAno / maxRef) * 100)));
+
+                return (
+                  <div key={ano} style={{ marginBottom: '0.75rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.2rem' }}>
+                      <span style={{ fontWeight: 600 }}>
+                        {ano} {ano === 2026 ? (activeScenario.neutralizarAnoTeste2026 !== false ? '(Ano-Teste Compensável)' : '(Ano-Teste CBS 0,9%/IBS 0,1%)') : ano === 2033 ? '(Modelo Novo Pleno)' : `(Transição)`}
+                      </span>
+                      <strong style={{ color: 'var(--text-highlight)' }}>
+                        R$ {cargaAno.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </strong>
+                    </div>
+                    <div style={{ height: '8px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div 
+                        style={{ 
                         height: '100%', 
                         width: `${pctWidth}%`, 
                         background: ano === 2033 ? 'linear-gradient(90deg, #3b82f6, #6366f1)' : 'var(--accent-blue)',
@@ -451,7 +457,8 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                   </div>
                 </div>
               );
-            })}
+            });
+          })()}
           </div>
         </div>
 

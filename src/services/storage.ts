@@ -78,7 +78,20 @@ export class LocalStorageManager {
   static getScenarios(): ScenarioPremises[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.SCENARIOS);
-      if (data) return JSON.parse(data);
+      if (data) {
+        const parsed: ScenarioPremises[] = JSON.parse(data);
+        // Garante que o cenário desonerado exista mesmo se o usuário tiver cache antigo
+        if (!parsed.some(s => s.id === 'desonerado')) {
+          const desonerado = DEFAULT_SCENARIOS.find(s => s.id === 'desonerado');
+          if (desonerado) parsed.splice(1, 0, desonerado);
+        }
+        return parsed.map(s => ({
+          ...s,
+          estrategiaPreco: s.estrategiaPreco || (s.id === 'desonerado' || s.id === 'otimista' ? 'PRECO_DESONERADO' : 'PRECO_BRUTO'),
+          teseIcms: s.teseIcms || (s.id === 'otimista' ? 'CONTRIBUINTE' : 'FISCO'),
+          neutralizarAnoTeste2026: s.neutralizarAnoTeste2026 !== undefined ? s.neutralizarAnoTeste2026 : true
+        }));
+      }
     } catch (e) {
       console.error('Erro ao ler cenários do storage', e);
     }

@@ -70,6 +70,10 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
       let sumIBSEstadual = 0;
       let sumIBSMunicipal = 0;
       let sumIS = 0;
+      let sumResidualIcmsIss = 0;
+      let sumResidualPisCofins = 0;
+      let sumResidualIpi = 0;
+      let sumContingenciaIcms = 0;
       let sumCreditos = 0;
 
       saidasDocs.forEach(d => {
@@ -80,6 +84,10 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
             sumIBSEstadual += sim.valorIBSEstadual;
             sumIBSMunicipal += sim.valorIBSMunicipal;
             sumIS += sim.valorIS;
+            sumResidualIcmsIss += sim.valorResidualIcmsIss;
+            sumResidualPisCofins += sim.valorResidualPisCofins;
+            sumResidualIpi += sim.valorResidualIpi;
+            sumContingenciaIcms += (sim.contingenciaIcms || 0);
           }
         });
       });
@@ -93,14 +101,9 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
         });
       });
 
-      // Tributos Residuais do Legado
-      const residualIcmsIss = roundCurrency((legacyIcms + legacyIss) * yearDef.fatorResidualIcmsIss);
-      const residualPisCofins = roundCurrency((legacyPis + legacyCofins) * yearDef.fatorResidualPisCofins);
-      const residualIpi = roundCurrency(legacyIpi * yearDef.fatorResidualIpi);
-
       const totalIBSTotal = roundCurrency(sumIBSEstadual + sumIBSMunicipal);
       const totalCargaBruta = roundCurrency(
-        sumCBS + totalIBSTotal + sumIS + residualIcmsIss + residualPisCofins + residualIpi
+        sumCBS + totalIBSTotal + sumIS + sumResidualIcmsIss + sumResidualPisCofins + sumResidualIpi
       );
       const totalCargaLiquida = roundCurrency(Math.max(0, totalCargaBruta - sumCreditos));
 
@@ -109,9 +112,10 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
         descricaoFase: yearDef.descricaoFase,
         baseLegal: yearDef.baseLegal,
         grauCerteza: yearDef.grauCerteza,
-        residualIcmsIss,
-        residualPisCofins,
-        residualIpi,
+        residualIcmsIss: roundCurrency(sumResidualIcmsIss),
+        residualPisCofins: roundCurrency(sumResidualPisCofins),
+        residualIpi: roundCurrency(sumResidualIpi),
+        contingenciaIcms: roundCurrency(sumContingenciaIcms),
         cbs: sumCBS,
         ibsEstadual: sumIBSEstadual,
         ibsMunicipal: sumIBSMunicipal,
@@ -123,7 +127,7 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
         aliquotaEfetivaPct: totalFaturamento > 0 ? (totalCargaLiquida / totalFaturamento) * 100 : 0
       };
     });
-  }, [saidasDocs, entradasDocs, legacyIcms, legacyIss, legacyIpi, legacyPis, legacyCofins, totalFaturamento]);
+  }, [saidasDocs, entradasDocs, totalFaturamento]);
 
   // Comparação contra Ano-Base Escolhido
   const baseYearData = matrixData.find(m => m.ano === baseYear) || matrixData[0];
@@ -180,7 +184,18 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
           </div>
 
           <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-            Premissas: CBS Federal <strong>{(activeScenario.aliquotaReferenciaCBS * 100).toFixed(2)}%</strong> • IBS Estadual <strong>{(activeScenario.aliquotaReferenciaIBSEstadual * 100).toFixed(2)}%</strong> • IBS Municipal <strong>{(activeScenario.aliquotaReferenciaIBSMunicipal * 100).toFixed(2)}%</strong> (Total {((activeScenario.aliquotaReferenciaCBS + activeScenario.aliquotaReferenciaIBSEstadual + activeScenario.aliquotaReferenciaIBSMunicipal) * 100).toFixed(2)}%)
+            Premissas: CBS Federal <strong>{(activeScenario.aliquotaReferenciaCBS * 100).toFixed(2)}%</strong> • IBS Estadual <strong>{(activeScenario.aliquotaReferenciaIBSEstadual * 100).toFixed(2)}%</strong> • IBS Municipal <strong>{(activeScenario.aliquotaReferenciaIBSMunicipal * 100).toFixed(2)}%</strong>
+            <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.3rem', flexWrap: 'wrap' }}>
+              <span className="badge badge-calculado">
+                {activeScenario.estrategiaPreco === 'PRECO_DESONERADO' ? 'Preço Desonerado (Receita Líquida)' : 'Preço Bruto (Art. 12 LC 214)'}
+              </span>
+              <span className="badge badge-warning">
+                {activeScenario.teseIcms === 'CONTRIBUINTE' ? 'Tese Contribuinte (PLP 16/25)' : 'Tese do Fisco (SEFAZ/SP)'}
+              </span>
+              <span className="badge badge-lido">
+                {activeScenario.neutralizarAnoTeste2026 !== false ? '2026 Compensado (Neutro)' : '2026 Carga Bruta'}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -261,15 +276,55 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
                 onChange={(e) => setEditedScenario({ ...editedScenario, aproveitamentoCreditoFator: parseFloat(e.target.value) })}
               />
             </div>
+
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.25rem' }}>
+                Estratégia de Preço / Base:
+              </label>
+              <select
+                className="form-control"
+                value={editedScenario.estrategiaPreco || 'PRECO_BRUTO'}
+                onChange={(e) => setEditedScenario({ ...editedScenario, estrategiaPreco: e.target.value as any })}
+              >
+                <option value="PRECO_BRUTO">Preço Bruto Contratual (Art. 12 LC 214)</option>
+                <option value="PRECO_DESONERADO">Preço Desonerado (Receita Líquida Alvo / MGK)</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.25rem' }}>
+                Tese ICMS Residual (2027-2032):
+              </label>
+              <select
+                className="form-control"
+                value={editedScenario.teseIcms || 'FISCO'}
+                onChange={(e) => setEditedScenario({ ...editedScenario, teseIcms: e.target.value as any })}
+              >
+                <option value="FISCO">Tese do Fisco (SEFAZ/SP RC 32.303/25 - Com IBS/CBS)</option>
+                <option value="CONTRIBUINTE">Tese do Contribuinte (PLP 16/25 - Sem IBS/CBS)</option>
+                <option value="SIMPLES_HISTORICO">Redução Linear Simples</option>
+              </select>
+            </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-            <button className="btn btn-secondary btn-sm" onClick={() => setIsEditingScenario(false)}>
-              Cancelar
-            </button>
-            <button className="btn btn-primary btn-sm" onClick={handleSaveEditedPremises}>
-              Aplicar e Recalcular Matriz
-            </button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+            <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={editedScenario.neutralizarAnoTeste2026 !== false}
+                onChange={(e) => setEditedScenario({ ...editedScenario, neutralizarAnoTeste2026: e.target.checked })}
+              />
+              <span>Compensar CBS e IBS de 2026 no PIS/COFINS (Art. 125 da EC 132/2023 - Neutralidade de Caixa)</span>
+            </label>
+
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setIsEditingScenario(false)}>
+                Cancelar
+              </button>
+              <button className="btn btn-primary btn-sm" onClick={handleSaveEditedPremises}>
+                Aplicar e Recalcular Matriz
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -421,17 +476,51 @@ export const SimulatorTab: React.FC<SimulatorTabProps> = ({
             <tr style={{ background: 'rgba(255, 255, 255, 0.02)' }}>
               <td>
                 <strong>ICMS / ISS Residual</strong>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Redução gradual 2029-2032</div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  Redução gradual 2029-2032 • {activeScenario.teseIcms === 'CONTRIBUINTE' ? 'Tese Contribuinte' : 'Tese do Fisco'}
+                </div>
               </td>
               <td style={{ textAlign: 'right' }}>
                 R$ {(legacyIcms + legacyIss).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </td>
               {matrixData.map(m => (
-                <td key={m.ano} style={{ textAlign: 'right' }}>
+                <td 
+                  key={m.ano} 
+                  style={{ textAlign: 'right', cursor: 'pointer' }}
+                  onClick={() => setSelectedCellInfo({
+                    ano: m.ano,
+                    tributoNome: 'ICMS / ISS Residual',
+                    valor: m.residualIcmsIss,
+                    aliquotaRegra: `Fator Residual: ${(YEAR_DEFINITIONS[m.ano].fatorResidualIcmsIss * 100).toFixed(0)}% • Tese: ${activeScenario.teseIcms || 'FISCO'}`,
+                    fonteLegal: 'EC 132/2023, Art. 128 / RC SEFAZ/SP 32.303/25 / PLP 16/25',
+                    vigencia: `Exercício ${m.ano}`,
+                    grauCerteza: m.grauCerteza,
+                    explicacao: m.contingenciaIcms > 0 
+                      ? `Calculado sob a ${activeScenario.teseIcms === 'CONTRIBUINTE' ? 'Tese do Contribuinte (sem IBS/CBS na base)' : 'Tese do Fisco (com IBS/CBS por dentro)'}. Risco/Contingência estimada: R$ ${m.contingenciaIcms.toFixed(2)}.`
+                      : 'Parcela residual dos tributos estaduais e municipais vigentes durante a transição.'
+                  })}
+                  title="Clique para auditar tese jurídica e memória de cálculo"
+                >
                   R$ {m.residualIcmsIss.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </td>
               ))}
             </tr>
+
+            {/* Linha de Contingência Fiscal ICMS (Fisco vs Contribuinte) */}
+            {matrixData.some(m => m.contingenciaIcms > 0) && (
+              <tr style={{ background: 'rgba(245, 158, 11, 0.04)' }}>
+                <td>
+                  <strong style={{ color: 'var(--accent-amber)' }}>Contingência Fiscal ICMS</strong>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Diferença Fisco (SEFAZ/SP) vs Contribuinte (PLP 16/25)</div>
+                </td>
+                <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>-</td>
+                {matrixData.map(m => (
+                  <td key={m.ano} style={{ textAlign: 'right', color: m.contingenciaIcms > 0 ? 'var(--accent-amber)' : 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    {m.contingenciaIcms > 0 ? `± R$ ${m.contingenciaIcms.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '-'}
+                  </td>
+                ))}
+              </tr>
+            )}
 
             <tr style={{ background: 'rgba(255, 255, 255, 0.02)' }}>
               <td>

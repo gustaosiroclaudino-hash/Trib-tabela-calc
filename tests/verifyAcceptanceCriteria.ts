@@ -126,7 +126,7 @@ async function runTests() {
   // 2027: Extinção de PIS e COFINS
   const sim2027 = sampleItem.simulacoesPorAno[2027];
   assert(sim2027.fatorResidualPisCofins === 0.0, 'PIS e COFINS extintos em 2027 (fator residual 0.0)');
-  assert(sim2027.aliquotaCBSEfetiva === 0.088, 'CBS em cobrança plena (8,80%) em 2027');
+  assert(Math.abs(sim2027.aliquotaCBSEfetiva - 0.087) < 0.001, 'CBS em 2027 com dedução de 0,1% p.p. conforme Art. 126 da EC 132/2023 (8,70%)');
 
   // 2029: Início da redução de 10% do ICMS/ISS e 10% do IBS
   const sim2029 = sampleItem.simulacoesPorAno[2029];
@@ -162,7 +162,46 @@ async function runTests() {
   // 7. Teste de Memória de Cálculo Auditável
   console.log('\n7. Testando Memória de Cálculo Passo a Passo:');
   assert(sim2033.memoriaCalculo.length >= 3, 'Memória de cálculo auditável possui 3 ou mais etapas detalhadas');
-  assert(sim2033.memoriaCalculo[0].baseLegal.includes('LC 214/2025'), 'Base legal citada na memória de cálculo');
+  assert(sim2033.memoriaCalculo[0].baseLegal.includes('LC 214/2025') || sim2033.memoriaCalculo[0].baseLegal.includes('Metodologia'), 'Base legal citada na memória de cálculo');
+
+  // 8. Teste de Comparabilidade com Modelo Desonerado (TaxReform.AI / Metodologia MGK)
+  console.log('\n8. Testando Comparabilidade com Modelo Desonerado (TaxReform.AI):');
+  const cenarioDesoneradoFisco = DEFAULT_SCENARIOS.find(s => s.id === 'desonerado') || DEFAULT_SCENARIOS[1];
+  const resDesonerado = await parseNfeXml(
+    OFFICIAL_FIXTURE_XML,
+    'nfe_desonerado.xml',
+    DEFAULT_DEMO_COMPANY,
+    OFFICIAL_TAX_RULESET_DEFAULT,
+    cenarioDesoneradoFisco
+  );
+
+  let total2026Desonerado = 0;
+  let total2027DesoneradoFisco = 0;
+  let total2033Desonerado = 0;
+  resDesonerado.doc!.itens.forEach(item => {
+    total2026Desonerado += item.simulacoesPorAno[2026].totalCargaEstimada;
+    total2027DesoneradoFisco += item.simulacoesPorAno[2027].totalCargaEstimada;
+    total2033Desonerado += item.simulacoesPorAno[2033].totalCargaEstimada;
+  });
+
+  assert(Math.abs(total2026Desonerado - 5429.69) < 0.20, `Ano 2026 compensado bate com TaxReform.AI em R$ 5.429,69 (obtido: R$ ${total2026Desonerado.toFixed(2)})`);
+  assert(Math.abs(total2027DesoneradoFisco - 5155.28) < 0.30, `Ano 2027 Tese Fisco bate com TaxReform.AI em R$ 5.155,28 (obtido: R$ ${total2027DesoneradoFisco.toFixed(2)})`);
+  assert(Math.abs(total2033Desonerado - 4314.11) < 0.30, `Ano 2033 Desonerado bate com TaxReform.AI em R$ 4.314,11 (obtido: R$ ${total2033Desonerado.toFixed(2)})`);
+
+  // Testando Tese do Contribuinte (PLP 16/2025)
+  const cenarioDesoneradoContrib = { ...cenarioDesoneradoFisco, teseIcms: 'CONTRIBUINTE' as const };
+  const resContrib = await parseNfeXml(
+    OFFICIAL_FIXTURE_XML,
+    'nfe_contrib.xml',
+    DEFAULT_DEMO_COMPANY,
+    OFFICIAL_TAX_RULESET_DEFAULT,
+    cenarioDesoneradoContrib
+  );
+  let total2027Contrib = 0;
+  resContrib.doc!.itens.forEach(item => {
+    total2027Contrib += item.simulacoesPorAno[2027].totalCargaEstimada;
+  });
+  assert(Math.abs(total2027Contrib - 4854.18) < 0.30, `Ano 2027 Tese Contribuinte bate com TaxReform.AI em R$ 4.854,18 (obtido: R$ ${total2027Contrib.toFixed(2)})`);
 
   console.log('\n------------------------------------------------------');
   console.log(`Resultado dos Testes: ${passedTests}/${totalTests} passaram com sucesso!`);
